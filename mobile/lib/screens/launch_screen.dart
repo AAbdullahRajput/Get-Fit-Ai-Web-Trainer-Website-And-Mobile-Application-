@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/theme.dart';
 import 'landing_screen.dart';
@@ -13,13 +14,35 @@ class LaunchScreen extends StatefulWidget {
   State<LaunchScreen> createState() => _LaunchScreenState();
 }
 
-class _LaunchScreenState extends State<LaunchScreen> {
+class _LaunchScreenState extends State<LaunchScreen> with SingleTickerProviderStateMixin {
   double _progress = 0.0;
   Timer? _timer;
+  late AnimationController _logoController;
+  late Animation<double> _logoAnimation;
 
   @override
   void initState() {
     super.initState();
+    
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ));
+
+    _logoController = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _logoAnimation = Tween<double>(begin: 0.94, end: 1.06).animate(
+      CurvedAnimation(
+        parent: _logoController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
     _startLoading();
   }
 
@@ -56,6 +79,7 @@ class _LaunchScreenState extends State<LaunchScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _logoController.dispose();
     super.dispose();
   }
 
@@ -71,37 +95,40 @@ class _LaunchScreenState extends State<LaunchScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // High-resolution Clean Logo
-              Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(28),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.15),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(28),
-                  child: Image.asset(
-                    'assets/logo_clean.png',
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Center(
-                        child: Text(
-                          'GETFIT',
-                          style: TextStyle(
-                            color: AppColors.black,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
+              // High-resolution Clean Animated Logo (Breathing Scale Animation)
+              ScaleTransition(
+                scale: _logoAnimation,
+                child: Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 24,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: Image.asset(
+                      'assets/logo_clean.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Center(
+                          child: Text(
+                            'GETFIT',
+                            style: TextStyle(
+                              color: AppColors.black,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),

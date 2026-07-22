@@ -65,6 +65,9 @@ flutter:
     - assets/logo.jpeg
     - assets/logo_clean.png
     - assets/icon_padded.png
+    - assets/logo_padded.png
+    - assets/logo_inset.png
+    - assets/splash_bg.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -97,14 +100,17 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/icon_padded.png"
   adaptive_icon_background: "#DAF400"
-  adaptive_icon_foreground: "assets/logo_clean.png"
-  adaptive_icon_foreground_inset: 60
+  adaptive_icon_foreground: "assets/logo_inset.png"
+  adaptive_icon_foreground_inset: 0
 
 
 flutter_native_splash:
-  color: "#DAF400"
-  image: assets/logo_clean.png
+  background_image: assets/splash_bg.png
+  image: assets/logo_padded.png          # used for older Android / iOS — less strict
+  background_image_dark: assets/splash_bg.png
+  image_dark: assets/logo_padded.png
   android_12:
-    image: assets/logo_clean.png
-    icon_background_color: "#DAF400"
+    image: assets/logo_padded.png # NEEDS padding, gets circle-masked
+    color: "#D2F556"
+    color_dark: "#D2F556"
   fullscreen: true
