@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useClerk } from '@clerk/clerk-react'
 import { HomeIcon, HistoryIcon, BookingsIcon, ProfileIcon, SlotsIcon, FolderIcon, ClockIcon, PartyIcon, WarningIcon } from '../components/NavIcons'
 
 const getMobileDisplay = (phone) => {
@@ -59,7 +58,6 @@ const getCroppedImgBase64 = (imageSrc, x, y, zoomVal) => {
 export default function Dashboard() {
     const navigate = useNavigate()
     const location = useLocation()
-    const clerk = useClerk()
     const [activeTab, setActiveTab] = useState(() => {
         const params = new URLSearchParams(location.search);
         return params.get('tab') || 'home';
@@ -256,6 +254,7 @@ export default function Dashboard() {
         const experienceVal = formElements.experience.value;
         const trainingTypeVal = formElements.training_type.value;
         const bioVal = formElements.bio.value;
+        const sessionPriceVal = formElements.session_price.value;
 
         let hasError = false;
         const newErrors = { email: '', mobile: '' };
@@ -268,6 +267,13 @@ export default function Dashboard() {
         if (!validateMobile(mobileVal)) {
             newErrors.mobile = 'Please enter a valid Pakistani mobile number starting with 3 (10 digits, e.g., 3001234567).';
             hasError = true;
+        }
+
+        const parsedPrice = parseFloat(sessionPriceVal);
+        if (isNaN(parsedPrice) || parsedPrice <= 0) {
+            setErrorMsg("Session price must be a positive number.");
+            setUpdateLoading(false);
+            return;
         }
 
         if (hasError) {
@@ -306,6 +312,10 @@ export default function Dashboard() {
         if (experienceVal !== (trainer?.experience || '0 years')) updatedFields.experience = experienceVal;
         if (trainingTypeVal !== (trainer?.training_type || 'General')) updatedFields.training_type = trainingTypeVal;
         if (bioVal !== (trainer?.bio || defaultBio)) updatedFields.bio = bioVal;
+        
+        const currentPrice = trainer?.session_price !== undefined ? parseFloat(trainer.session_price) : 48.00;
+        if (parsedPrice !== currentPrice) updatedFields.session_price = parsedPrice;
+
         if (selectedFile && imageBase64) {
             updatedFields.image_base64 = imageBase64;
             updatedFields.image_name = imageName;
@@ -383,14 +393,9 @@ export default function Dashboard() {
     const trainerEmail = trainer?.email || 'trainer@getfit.com';
     const trainerInitials = trainerName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || 'TR';
 
-    const handleLogout = async () => {
+    const handleLogout = () => {
         setLoggingOut(true);
         localStorage.clear();
-        try {
-            await clerk.signOut();
-        } catch (e) {
-            console.error('Clerk sign out error:', e);
-        }
         navigate('/login', { replace: true });
     };
 
@@ -736,7 +741,7 @@ export default function Dashboard() {
                             <input
                                 type="tel"
                                 name="mobile"
-                                placeholder="3XXXXXXXXX"
+                                placeholder="3001234567"
                                 defaultValue={getMobileDisplay(trainer?.phone_number)}
                                 required
                                 disabled={updateLoading}
@@ -761,6 +766,10 @@ export default function Dashboard() {
                     <div className="field">
                         <label>Exercise Specialties</label>
                         <input type="text" name="training_type" defaultValue={trainer?.training_type || 'General'} required disabled={updateLoading} />
+                    </div>
+                    <div className="field">
+                        <label>Session Price ($)</label>
+                        <input type="number" step="0.01" name="session_price" defaultValue={trainer?.session_price !== undefined && trainer?.session_price !== null ? trainer.session_price : 48.00} required disabled={updateLoading} />
                     </div>
                     <div className="field">
                         <label>Profile Picture</label>

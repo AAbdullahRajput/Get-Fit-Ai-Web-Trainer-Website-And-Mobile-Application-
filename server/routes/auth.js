@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const { signup, login, forgotPassword, verifyRecoveryCode, updatePassword, checkTrainerEmail, getProfile, updateProfile, googleOAuth } = require('../controllers/authController');
+const { signup, login, forgotPassword, verifyRecoveryCode, updatePassword, checkTrainerEmail, getProfile, updateProfile, googleOAuth, getGoogleOAuthUrl } = require('../controllers/authController');
 
 // POST /api/auth/signup
 router.post('/signup', signup);
 
 // POST /api/auth/login
 router.post('/login', login);
+
+// GET /api/auth/google-url
+router.get('/google-url', getGoogleOAuthUrl);
 
 // POST /api/auth/google-oauth
 router.post('/google-oauth', googleOAuth);

@@ -143,10 +143,7 @@ const createSlot = async (req, res) => {
       end_time: item.end_time,
       price: item.price ? parseFloat(item.price) : 48.00,
       status: item.status || 'available',
-      is_active: item.is_active !== undefined ? item.is_active : true,
-      booked_by_user_id: item.booked_by_user_id || null,
-      booked_by_name: item.booked_by_name || null,
-      booked_by_email: item.booked_by_email || null
+      is_active: item.is_active !== undefined ? item.is_active : true
     }));
 
     if (isArray) {
@@ -430,9 +427,7 @@ const bookSlot = async (req, res) => {
         .from('trainer_slots')
         .update({
           status: 'booked',
-          is_active: false,
-          booked_by_name: name || null,
-          booked_by_email: email || null
+          is_active: false
         })
         .eq('id', existing.id)
         .select()
@@ -506,9 +501,7 @@ const bookSlot = async (req, res) => {
         end_time: end_time || template.end_time,
         price: price ? parseFloat(price) : parseFloat(template.price),
         status: 'booked',
-        is_active: false,
-        booked_by_name: name || null,
-        booked_by_email: email || null
+        is_active: false
       })
       .select()
       .single();
@@ -743,19 +736,49 @@ const toggleDaySlots = async (req, res) => {
         }
         updatedSlots = allSlots;
       } else {
-        // Fallback: Activate all slots for this day
-        const { data, error: dbError } = await supabaseDb
+        // Fallback: Activate only default slots (9 AM to 5 PM, hours 9 to 16 inclusive)
+        const defaultTimes = [];
+        for (let h = 9; h < 17; h++) {
+          defaultTimes.push(`${String(h).padStart(2, '0')}:00:00`);
+        }
+
+        // Deactivate all first
+        const { error: deactivateError } = await supabaseDb
+          .from('trainer_slots')
+          .update({ is_active: false })
+          .eq('slot_date', slot_date)
+          .eq('trainer_id', user.id);
+
+        if (deactivateError) {
+          console.error('toggleDaySlots DB error (fallback deactivate phase):', deactivateError);
+          return res.status(500).json({ error: 'Failed to reset slots: ' + deactivateError.message });
+        }
+
+        // Activate standard active hours
+        const { error: activateError } = await supabaseDb
           .from('trainer_slots')
           .update({ is_active: true })
           .eq('slot_date', slot_date)
           .eq('trainer_id', user.id)
-          .select();
+          .in('start_time', defaultTimes);
 
-        if (dbError) {
-          console.error('toggleDaySlots DB error:', dbError);
-          return res.status(500).json({ error: 'Failed to activate all slots: ' + dbError.message });
+        if (activateError) {
+          console.error('toggleDaySlots DB error (fallback activate phase):', activateError);
+          return res.status(500).json({ error: 'Failed to activate default slots: ' + activateError.message });
         }
-        updatedSlots = data;
+
+        // Re-fetch all slots for this day to return to client
+        const { data: allSlots, error: fetchError } = await supabaseDb
+          .from('trainer_slots')
+          .select('*')
+          .eq('slot_date', slot_date)
+          .eq('trainer_id', user.id);
+
+        if (fetchError) {
+          console.error('toggleDaySlots DB error (fallback fetch phase):', fetchError);
+          return res.status(500).json({ error: 'Failed to retrieve updated slots: ' + fetchError.message });
+        }
+        updatedSlots = allSlots;
       }
     }
 

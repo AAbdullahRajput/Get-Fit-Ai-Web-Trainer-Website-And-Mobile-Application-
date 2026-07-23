@@ -47,6 +47,22 @@ export default function Slots() {
     });
     const [showAllSlots, setShowAllSlots] = useState(false);
 
+    // Add Custom Slot Modal states
+    const [showAddSlotModal, setShowAddSlotModal] = useState(false);
+    const [addSlotDay, setAddSlotDay] = useState(selectedDayFilter);
+    const [addSlotHour, setAddSlotHour] = useState('');
+    const [addSlotPrice, setAddSlotPrice] = useState(48.00);
+    const [addSlotIsActive, setAddSlotIsActive] = useState(true);
+    const [addSlotError, setAddSlotError] = useState('');
+    const [addSlotSubmitting, setAddSlotSubmitting] = useState(false);
+    const [loggingOut, setLoggingOut] = useState(false);
+
+    const handleLogout = () => {
+        setLoggingOut(true);
+        localStorage.clear();
+        navigate('/login', { replace: true });
+    };
+
     useEffect(() => {
         const params = new URLSearchParams(location.search);
         const dayParam = params.get('day');
@@ -85,26 +101,20 @@ export default function Slots() {
                 s.slot_date >= '1970-01-05' && s.slot_date <= '1970-01-11'
             );
 
-            const existingKeys = new Set(
-                existingTemplates.map(s => `${s.slot_date}_${s.start_time.substring(0, 5)}`)
-            );
+            if (existingTemplates.length === 0) {
+                // First-time initialization: generate all 168 hourly slots for the reference week
+                const defaultSlots = [];
+                const price = trainer?.session_price || 48.00;
 
-            const missingSlots = [];
-            const price = trainer?.session_price || 48.00;
+                for (const weekday of WEEKDAYS) {
+                    const dStr = weekday.dateString;
+                    for (let h = 0; h < 24; h++) {
+                        const start_time = `${String(h).padStart(2, '0')}:00:00`;
+                        const endHour = h + 1;
+                        const end_time = endHour === 24 ? '00:00:00' : `${String(endHour).padStart(2, '0')}:00:00`;
 
-            // 3. Find which of the 168 template slots (7 days * 24) are missing
-            for (const weekday of WEEKDAYS) {
-                const dStr = weekday.dateString;
-                for (let h = 0; h < 24; h++) {
-                    const start_time = `${String(h).padStart(2, '0')}:00:00`;
-                    const endHour = h + 1;
-                    const end_time = endHour === 24 ? '00:00:00' : `${String(endHour).padStart(2, '0')}:00:00`;
-
-                    const key = `${dStr}_${start_time.substring(0, 5)}`;
-                    if (!existingKeys.has(key)) {
-                        // Slots from 9 to 5 are open by default (9:00:00 to 17:00:00, i.e. hours 9 to 16 inclusive)
                         const is_active = (h >= 9 && h < 17);
-                        missingSlots.push({
+                        defaultSlots.push({
                             slot_date: dStr,
                             start_time,
                             end_time,
@@ -114,30 +124,29 @@ export default function Slots() {
                         });
                     }
                 }
-            }
 
-            // 4. Bulk insert missing slots into backend
-            if (missingSlots.length > 0) {
+                // Bulk insert default slots into backend
                 const bulkResponse = await fetch('/api/slots', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${session.access_token}`
                     },
-                    body: JSON.stringify(missingSlots)
+                    body: JSON.stringify(defaultSlots)
                 });
                 const bulkData = await bulkResponse.json();
                 if (!bulkResponse.ok) {
                     throw new Error(bulkData.error || 'Failed to generate weekly slots');
                 }
                 const inserted = bulkData.slots || [];
-                const allTemplateSlots = [...existingTemplates, ...inserted].sort((a, b) => {
+                const allTemplateSlots = [...inserted].sort((a, b) => {
                     const dateCompare = a.slot_date.localeCompare(b.slot_date);
                     if (dateCompare !== 0) return dateCompare;
                     return a.start_time.localeCompare(b.start_time);
                 });
                 setSlots(allTemplateSlots);
             } else {
+                // Just use existing template slots and don't generate anything automatically
                 setSlots(existingTemplates.sort((a, b) => {
                     const dateCompare = a.slot_date.localeCompare(b.slot_date);
                     if (dateCompare !== 0) return dateCompare;
@@ -240,18 +249,21 @@ export default function Slots() {
                 }
             }
 
-            if (Array.isArray(activeTimesBackup)) {
-                // Optimistic state: set only backup slots to true
-                nextSlotsState = slots.map(s => {
-                    if (s.slot_date === dayString) {
-                        return { ...s, is_active: activeTimesBackup.includes(s.start_time) };
-                    }
-                    return s;
-                });
-            } else {
-                // Optimistic state: fallback to setting all to true
-                nextSlotsState = slots.map(s => s.slot_date === dayString ? { ...s, is_active: true } : s);
+            if (!Array.isArray(activeTimesBackup)) {
+                // Fallback to default 9 AM - 5 PM hours (hours 9 to 16 inclusive)
+                activeTimesBackup = [];
+                for (let h = 9; h < 17; h++) {
+                    activeTimesBackup.push(`${String(h).padStart(2, '0')}:00:00`);
+                }
             }
+
+            // Optimistic state: set backup (or fallback) slots to active, others to inactive
+            nextSlotsState = slots.map(s => {
+                if (s.slot_date === dayString) {
+                    return { ...s, is_active: activeTimesBackup.includes(s.start_time) };
+                }
+                return s;
+            });
         }
 
         // Apply optimistic update instantly
@@ -267,7 +279,8 @@ export default function Slots() {
             }
 
             const requestBody = { slot_date: dayString, is_active: !currentIsActive };
-            if (!currentIsActive && Array.isArray(activeTimesBackup)) {
+            if (!currentIsActive) {
+                // Activating: send active_times (backup or fallback default)
                 requestBody.active_times = activeTimesBackup;
             }
 
@@ -299,6 +312,98 @@ export default function Slots() {
             setSlotsError(err.message);
             // Revert
             setSlots(slots);
+        }
+    };
+
+    const getAvailableHoursForDay = (dayString) => {
+        const existingHoursForDay = new Set(
+            slots
+                .filter(s => s.slot_date === dayString)
+                .map(s => parseInt(s.start_time.split(':')[0], 10))
+        );
+        const available = [];
+        for (let h = 0; h < 24; h++) {
+            if (!existingHoursForDay.has(h)) {
+                available.push(h);
+            }
+        }
+        return available;
+    };
+
+    const getFirstAvailableHour = (dayString) => {
+        const available = getAvailableHoursForDay(dayString);
+        return available.length > 0 ? available[0] : '';
+    };
+
+    const handleAddSlotSubmit = async () => {
+        if (addSlotHour === '') {
+            setAddSlotError('No time slot selected or available.');
+            return;
+        }
+
+        const priceNum = parseFloat(addSlotPrice);
+        if (isNaN(priceNum) || priceNum <= 0) {
+            setAddSlotError('Please enter a valid positive session price.');
+            return;
+        }
+
+        setAddSlotSubmitting(true);
+        setAddSlotError('');
+
+        try {
+            const sessionString = localStorage.getItem('session');
+            const session = sessionString ? JSON.parse(sessionString) : null;
+            if (!session?.access_token) {
+                throw new Error('You must be logged in.');
+            }
+
+            const start_time = `${String(addSlotHour).padStart(2, '0')}:00:00`;
+            const endHour = addSlotHour + 1;
+            const end_time = endHour === 24 ? '00:00:00' : `${String(endHour).padStart(2, '0')}:00:00`;
+
+            const newSlotPayload = {
+                slot_date: addSlotDay,
+                start_time,
+                end_time,
+                price: priceNum,
+                is_active: addSlotIsActive,
+                status: 'available'
+            };
+
+            const response = await fetch('/api/slots', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify(newSlotPayload)
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to create slot');
+            }
+
+            // Insert single created slot or bulk slots returned
+            const createdSlot = data.slot || (data.slots && data.slots[0]);
+            if (!createdSlot) {
+                throw new Error('Failed to retrieve the created slot from response');
+            }
+
+            setSlots((prev) => {
+                const list = [...prev, createdSlot];
+                return list.sort((a, b) => {
+                    const dateCompare = a.slot_date.localeCompare(b.slot_date);
+                    if (dateCompare !== 0) return dateCompare;
+                    return a.start_time.localeCompare(b.start_time);
+                });
+            });
+
+            setShowAddSlotModal(false);
+        } catch (err) {
+            setAddSlotError(err.message);
+        } finally {
+            setAddSlotSubmitting(false);
         }
     };
 
@@ -412,24 +517,26 @@ export default function Slots() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <button
-                            onClick={() => navigate('/slots-tester')}
-                            title="Test dynamic slot generation"
-                            style={{
-                                background: 'rgba(215,255,30,0.1)',
-                                border: '1px solid rgba(215,255,30,0.25)',
-                                borderRadius: '10px',
-                                color: 'var(--lime)',
-                                padding: '7px 14px',
-                                fontSize: '12px',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px'
+                        <button 
+                            className="btn-secondary" 
+                            onClick={handleLogout} 
+                            disabled={loggingOut} 
+                            style={{ 
+                                padding: '6px 14px', 
+                                fontSize: '11px', 
+                                borderRadius: '99px', 
+                                border: '1px solid rgba(255,255,255,0.2)', 
+                                background: 'transparent', 
+                                color: 'var(--text-light)', 
+                                cursor: 'pointer', 
+                                fontWeight: '800', 
+                                width: 'auto', 
+                                textTransform: 'uppercase', 
+                                letterSpacing: '0.5px', 
+                                opacity: loggingOut ? 0.6 : 1 
                             }}
                         >
-                            🧪 Test Booking API
+                            {loggingOut ? 'Logging out...' : 'Logout'}
                         </button>
                         <div className="avatar" style={{ overflow: 'hidden', padding: 0, flexShrink: 0 }}>
                             {trainer?.image_url ? (
@@ -597,14 +704,43 @@ export default function Slots() {
                         flexDirection: 'column',
                         overflow: 'hidden'
                     }}>
-                        <h2 style={{ fontSize: '20px', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0 }}>
-                            <span>
-                                {'Slots for ' + (WEEKDAYS.find(w => w.dateString === selectedDayFilter)?.fullLabel || selectedDayFilter)}
-                            </span>
-                            <span style={{ fontSize: '12px', background: 'rgba(215,255,30,0.1)', padding: '3px 10px', borderRadius: '12px', color: 'var(--lime)', fontWeight: 'bold' }}>
-                                {dayFiltered.filter(s => s.is_active).length} / 24 open
-                            </span>
-                        </h2>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <h2 style={{ fontSize: '20px', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+                                <span>
+                                    {'Slots for ' + (WEEKDAYS.find(w => w.dateString === selectedDayFilter)?.fullLabel || selectedDayFilter)}
+                                </span>
+                                <span style={{ fontSize: '12px', background: 'rgba(215,255,30,0.1)', padding: '3px 10px', borderRadius: '12px', color: 'var(--lime)', fontWeight: 'bold' }}>
+                                    {dayFiltered.filter(s => s.is_active).length} / 24 open
+                                </span>
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setAddSlotDay(selectedDayFilter);
+                                    setAddSlotHour(getFirstAvailableHour(selectedDayFilter));
+                                    setAddSlotPrice(trainer?.session_price || 48.00);
+                                    setAddSlotIsActive(true);
+                                    setAddSlotError('');
+                                    setShowAddSlotModal(true);
+                                }}
+                                style={{
+                                    background: 'var(--lime)',
+                                    color: 'var(--black)',
+                                    border: 'none',
+                                    borderRadius: '12px',
+                                    padding: '8px 16px',
+                                    fontWeight: 'bold',
+                                    fontSize: '12.5px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                ＋ Add Slot
+                            </button>
+                        </div>
                         <p style={{ fontSize: '12px', color: 'var(--text-dim)', margin: '0 0 16px', fontStyle: 'italic' }}>
                             Showing 9 AM – 5 PM by default · click <strong>Show Off-Hours</strong> to see all 24 hours
                         </p>
@@ -825,6 +961,195 @@ export default function Slots() {
                     </div>
                 </div>
             </div>
+            {/* Add Custom Slot Modal Overlay */}
+            {showAddSlotModal && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.75)',
+                    backdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 9999
+                }}>
+                    <div style={{
+                        background: 'var(--card-grad)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '24px',
+                        width: '90%',
+                        maxWidth: '440px',
+                        padding: '28px',
+                        boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+                        position: 'relative'
+                    }}>
+                        <h3 style={{ fontSize: '20px', color: 'var(--lime)', margin: '0 0 8px 0' }}>Add Custom Template Slot</h3>
+                        <p style={{ color: 'var(--text-dim)', fontSize: '13px', margin: '0 0 20px 0', lineHeight: '1.4' }}>
+                            Configure a template availability hour for your weekly schedule.
+                        </p>
+
+                        {addSlotError && (
+                            <div style={{ padding: '10px 12px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', borderRadius: '10px', marginBottom: '16px', fontSize: '12px', fontWeight: 'bold' }}>
+                                ⚠️ {addSlotError}
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {/* Day Selection */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <label style={{ fontSize: '12px', color: 'var(--text-dim)', fontWeight: 'bold' }}>Weekday</label>
+                                <select 
+                                    value={addSlotDay}
+                                    onChange={(e) => {
+                                        const newDay = e.target.value;
+                                        setAddSlotDay(newDay);
+                                        setAddSlotHour(getFirstAvailableHour(newDay));
+                                    }}
+                                    style={{
+                                        background: 'rgba(255,255,255,0.06)',
+                                        border: '1px solid rgba(255,255,255,0.12)',
+                                        borderRadius: '12px',
+                                        padding: '12px',
+                                        color: 'var(--text-light)',
+                                        fontSize: '14px',
+                                        outline: 'none'
+                                    }}
+                                >
+                                    {WEEKDAYS.map(w => (
+                                        <option key={w.dateString} value={w.dateString} style={{ background: '#1c1c16' }}>{w.fullLabel}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Hour Selection */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <label style={{ fontSize: '12px', color: 'var(--text-dim)', fontWeight: 'bold' }}>Time Slot</label>
+                                <select 
+                                    value={addSlotHour}
+                                    onChange={(e) => setAddSlotHour(parseInt(e.target.value, 10))}
+                                    style={{
+                                        background: 'rgba(255,255,255,0.06)',
+                                        border: '1px solid rgba(255,255,255,0.12)',
+                                        borderRadius: '12px',
+                                        padding: '12px',
+                                        color: 'var(--text-light)',
+                                        fontSize: '14px',
+                                        outline: 'none'
+                                    }}
+                                >
+                                    {getAvailableHoursForDay(addSlotDay).map(h => {
+                                        const ampm = h >= 12 ? 'PM' : 'AM';
+                                        const displayHour = h % 12 === 0 ? 12 : h % 12;
+                                        const nextHour = (h + 1) % 12 === 0 ? 12 : (h + 1) % 12;
+                                        const nextAmpm = (h + 1) >= 12 && (h + 1) < 24 ? 'PM' : (h + 1) === 24 || (h + 1) < 12 ? 'AM' : 'PM';
+                                        return (
+                                            <option key={h} value={h} style={{ background: '#1c1c16' }}>
+                                                {`${displayHour}:00 ${ampm} - ${nextHour}:00 ${nextAmpm}`}
+                                            </option>
+                                        );
+                                    })}
+                                    {getAvailableHoursForDay(addSlotDay).length === 0 && (
+                                        <option value="" disabled style={{ background: '#1c1c16' }}>No slots available (Day is full)</option>
+                                    )}
+                                </select>
+                            </div>
+
+                            {/* Price Input */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <label style={{ fontSize: '12px', color: 'var(--text-dim)', fontWeight: 'bold' }}>Session Price ($)</label>
+                                <input 
+                                    type="number"
+                                    step="0.01"
+                                    value={addSlotPrice}
+                                    onChange={(e) => setAddSlotPrice(e.target.value)}
+                                    style={{
+                                        background: 'rgba(255,255,255,0.06)',
+                                        border: '1px solid rgba(255,255,255,0.12)',
+                                        borderRadius: '12px',
+                                        padding: '12px',
+                                        color: 'var(--text-light)',
+                                        fontSize: '14px',
+                                        outline: 'none'
+                                    }}
+                                />
+                            </div>
+
+                            {/* Active Toggle */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--text-light)', fontWeight: 'bold' }}>Open for bookings</span>
+                                <div
+                                    style={{
+                                        position: 'relative',
+                                        width: '44px',
+                                        height: '24px',
+                                        background: addSlotIsActive ? 'var(--lime)' : 'rgba(255,255,255,0.1)',
+                                        borderRadius: '12px',
+                                        cursor: 'pointer',
+                                        transition: 'background-color 0.2s',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        padding: '2px'
+                                    }}
+                                    onClick={() => setAddSlotIsActive(!addSlotIsActive)}
+                                >
+                                    <div style={{
+                                        width: '20px',
+                                        height: '20px',
+                                        background: addSlotIsActive ? 'var(--black)' : '#888',
+                                        borderRadius: '50%',
+                                        transform: addSlotIsActive ? 'translateX(20px)' : 'translateX(0px)',
+                                        transition: 'transform 0.2s, background-color 0.2s'
+                                    }} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Action Buttons */}
+                        <div style={{ display: 'flex', gap: '12px', marginTop: '28px' }}>
+                            <button
+                                type="button"
+                                disabled={addSlotSubmitting}
+                                onClick={() => setShowAddSlotModal(false)}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    background: 'rgba(255,255,255,0.04)',
+                                    color: 'var(--text-light)',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={addSlotSubmitting || getAvailableHoursForDay(addSlotDay).length === 0}
+                                onClick={handleAddSlotSubmit}
+                                style={{
+                                    flex: 1,
+                                    padding: '12px',
+                                    borderRadius: '12px',
+                                    background: 'var(--lime)',
+                                    color: 'var(--black)',
+                                    fontWeight: 'bold',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s',
+                                    opacity: (addSlotSubmitting || getAvailableHoursForDay(addSlotDay).length === 0) ? 0.6 : 1
+                                }}
+                            >
+                                {addSlotSubmitting ? 'Saving...' : 'Add Slot'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -6,7 +6,6 @@ import ForgotPassword from './screens/ForgotPassword'
 import OtpVerification from './screens/OtpVerification'
 import Dashboard from './screens/Dashboard'
 import Slots from './screens/Slots'
-import SlotsTester from './screens/SlotsTester'
 import SsoCallback from './screens/SsoCallback'
 import PrivacyPolicy from './screens/PrivacyPolicy'
 import TermsConditions from './screens/TermsConditions'
@@ -25,7 +24,6 @@ export default function App() {
             <Route path="/verify" element={<OtpVerification />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/slots" element={<Slots />} />
-            <Route path="/slots-tester" element={<SlotsTester />} />
             <Route path="/sso-callback" element={<SsoCallback />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/terms-conditions" element={<TermsConditions />} />

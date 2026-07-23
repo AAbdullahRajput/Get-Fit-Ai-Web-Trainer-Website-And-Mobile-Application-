@@ -509,6 +509,22 @@ const updateProfile = async (req, res) => {
       return res.status(500).json({ error: 'Failed to update profile: ' + dbError.message });
     }
 
+    // Sync session price to existing available slots
+    if (updates.session_price !== undefined) {
+      const newPrice = parseFloat(updates.session_price);
+      if (!isNaN(newPrice)) {
+        const { error: slotsUpdateError } = await supabaseDb
+          .from('trainer_slots')
+          .update({ price: newPrice })
+          .eq('trainer_id', user.id)
+          .eq('status', 'available');
+
+        if (slotsUpdateError) {
+          console.error('[updateProfile] Price sync slots error:', slotsUpdateError);
+        }
+      }
+    }
+
     return res.status(200).json({ trainer });
   } catch (err) {
     console.error('[updateProfile] updateProfile unexpected error:', err);
@@ -516,23 +532,68 @@ const updateProfile = async (req, res) => {
   }
 };
 
+// GET /api/auth/google-url
+// Returns the Supabase authorization URL to the client for Google OAuth redirection.
+const getGoogleOAuthUrl = async (req, res) => {
+  try {
+    const { action } = req.query; // 'login' or 'signup'
+
+    if (!supabaseAuth) {
+      return res.status(500).json({ error: 'Supabase client not initialized' });
+    }
+
+    // Determine the redirect URL back to the frontend SSO callback page
+    const isLocal = req.get('host').includes('localhost') || req.get('host').includes('127.0.0.1');
+    const frontendHost = isLocal ? 'http://localhost:5173' : `${req.protocol}://${req.get('host')}`;
+    const redirectUrl = `${frontendHost}/sso-callback?action=${action || 'login'}`;
+
+    const { data, error } = await supabaseAuth.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true
+      }
+    });
+
+    if (error) {
+      console.error('[getGoogleOAuthUrl] signInWithOAuth error:', error);
+      return res.status(500).json({ error: 'Failed to initialize Google login: ' + error.message });
+    }
+
+    return res.status(200).json({ url: data.url });
+  } catch (err) {
+    console.error('[getGoogleOAuthUrl] unexpected error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 // POST /api/auth/google-oauth
-// Called after Clerk verifies Google identity on the frontend.
-// Receives { email, name, clerkUserId } and returns { trainer, session }
-// in the same shape as login so the rest of the app is unchanged.
+// Called after browser redirects back from Google OAuth.
+// Receives { accessToken, action } and validates user and database records.
 const googleOAuth = async (req, res) => {
   try {
-    const { email, name, clerkUserId, action } = req.body;
+    const { accessToken, action } = req.body;
 
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
+    if (!accessToken) {
+      return res.status(400).json({ error: 'Authentication token is required' });
     }
 
     if (!supabaseAuth || !supabaseDb) {
       return res.status(500).json({ error: 'Supabase client not initialized' });
     }
 
-    // Block if this email belongs to a regular client account
+    // Fetch user credentials directly from Supabase Auth
+    const { data: { user }, error: userError } = await supabaseAuth.auth.getUser(accessToken);
+
+    if (userError || !user) {
+      console.error('[googleOAuth] getUser error:', userError);
+      return res.status(401).json({ error: 'Google session has expired or is invalid. Please log in again.' });
+    }
+
+    const email = user.email;
+    const displayName = user.user_metadata?.full_name || user.user_metadata?.name || email.split('@')[0];
+
+    // Check A: Block if email belongs to a client
     const { data: clientExists } = await supabaseDb
       .from('users')
       .select('id')
@@ -547,60 +608,28 @@ const googleOAuth = async (req, res) => {
         .maybeSingle();
 
       if (!trainerExists) {
-        return res.status(400).json({ error: 'This email is already registered as a client account.' });
+        return res.status(400).json({ error: 'This email is already registered as a client account. Clients cannot access the Trainer dashboard.' });
       }
     }
 
-    // --- Find or create the trainer in Supabase ---
+    // Find the trainer profile
     let { data: trainer } = await supabaseDb
       .from('fitness_trainers')
       .select('*')
       .ilike('email', email)
       .maybeSingle();
 
+    // Check B: Block login action if there is no trainer account
+    if (action === 'login' && !trainer) {
+      return res.status(400).json({ error: 'No trainer account found with this email. Please sign up first.' });
+    }
 
-    let supabaseUserId;
-
+    // Check C: If signing up and profile doesn't exist, create it
     if (!trainer) {
-      // New trainer: create a Supabase auth user with a random secure password.
-      // They will always sign in via Google OAuth going forward.
-      const randomPassword = Math.random().toString(36).slice(-8) + 'A1!';
-      const displayName = name || email.split('@')[0];
-
-      const { data: authData, error: signUpError } = await supabaseAuth.auth.admin.createUser({
-        email,
-        password: randomPassword,
-        email_confirm: true
-      });
-
-      if (signUpError) {
-        if (signUpError.status === 422 || signUpError.message.includes('already') || signUpError.code === 'email_exists') {
-          const { data: usersData, error: listError } = await supabaseAuth.auth.admin.listUsers();
-          const existingUser = usersData?.users?.find(u => u.email.toLowerCase() === email.toLowerCase());
-          if (existingUser) {
-            supabaseUserId = existingUser.id;
-          } else {
-            console.error('[googleOAuth] listUsers failed or not found:', listError);
-            return res.status(400).json({ error: signUpError.message });
-          }
-        } else {
-          console.error('[googleOAuth] createUser error:', signUpError);
-          return res.status(400).json({ error: signUpError.message });
-        }
-      } else {
-        supabaseUserId = authData.user.id;
-      }
-
-      // Remove from public.users if auto-trigger inserted them
-      try {
-        await supabaseDb.from('users').delete().eq('id', supabaseUserId);
-      } catch (_) {}
-
-      // Insert into fitness_trainers
       const { data: newTrainer, error: dbError } = await supabaseDb
         .from('fitness_trainers')
         .insert([{
-          id: supabaseUserId,
+          id: user.id,
           email,
           name: displayName,
           training_type: 'General',
@@ -611,81 +640,18 @@ const googleOAuth = async (req, res) => {
 
       if (dbError) {
         console.error('[googleOAuth] insert trainer error:', dbError);
-        // Rollback Supabase auth user
-        try { await supabaseAuth.auth.admin.deleteUser(supabaseUserId); } catch (_) {}
         return res.status(500).json({ error: 'Failed to create trainer profile: ' + dbError.message });
       }
-
       trainer = newTrainer;
-    } else {
-      supabaseUserId = trainer.id;
-      try {
-        const { data: usersData } = await supabaseAuth.auth.admin.listUsers();
-        const authUser = usersData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
-
-        if (authUser) {
-          if (authUser.id !== trainer.id) {
-            console.warn(`[googleOAuth] Mismatched Auth ID (${authUser.id}) and Trainer ID (${trainer.id}). Re-creating Auth user...`);
-            await supabaseAuth.auth.admin.deleteUser(authUser.id);
-            const randomPassword = Math.random().toString(36).slice(-8) + 'A1!';
-            await supabaseAuth.auth.admin.createUser({
-              id: trainer.id,
-              email,
-              password: randomPassword,
-              email_confirm: true
-            });
-          }
-        } else {
-          console.log(`[googleOAuth] Auth user missing for existing trainer. Creating...`);
-          const randomPassword = Math.random().toString(36).slice(-8) + 'A1!';
-          await supabaseAuth.auth.admin.createUser({
-            id: trainer.id,
-            email,
-            password: randomPassword,
-            email_confirm: true
-          });
-        }
-      } catch (repairErr) {
-        console.error('[googleOAuth] Auth auto-repair error:', repairErr);
-      }
     }
 
-    // Generate a session using admin.createSession (impersonation)
-    // Supabase doesn't support createSession for arbitrary users in all plans,
-    // so we use generateLink + exchange pattern: generate a magic link and
-    // sign in with it server-side to get a real session token.
-    // Fallback: use a short-lived JWT via admin.generateLink of type "magiclink"
-    const { data: linkData, error: linkError } = await supabaseAuth.auth.admin.generateLink({
-      type: 'magiclink',
-      email,
-    });
+    // Map a unified session object so the frontend dashboard continues working
+    const session = {
+      access_token: accessToken,
+      token_type: 'bearer',
+      user: user
+    };
 
-    if (linkError) {
-      console.error('[googleOAuth] generateLink error:', linkError);
-      return res.status(500).json({ error: 'Failed to generate session: ' + linkError.message });
-    }
-
-    // Extract the token from the magic link URL and exchange it for a session
-    const linkUrl = linkData?.properties?.action_link || '';
-    const tokenMatch = linkUrl.match(/token=([^&]+)/);
-    const token = tokenMatch ? tokenMatch[1] : null;
-
-    let session = null;
-    if (token) {
-      const { data: sessionData, error: sessionError } = await supabaseAuth.auth.verifyOtp({
-        token_hash: token,
-        type: 'magiclink',
-      });
-      if (!sessionError && sessionData?.session) {
-        session = sessionData.session;
-      } else {
-        console.warn('[googleOAuth] verifyOtp failed:', sessionError?.message);
-      }
-    }
-
-    // If we could not get a real Supabase session (e.g. token expired immediately),
-    // return the trainer data with a null session so the frontend can still
-    // store the trainer profile (limited functionality until re-login).
     return res.status(200).json({
       message: 'Google OAuth successful',
       trainer,
@@ -707,6 +673,9 @@ module.exports = {
   checkTrainerEmail,
   getProfile,
   updateProfile,
-  googleOAuth
+  googleOAuth,
+  getGoogleOAuthUrl
 };
+
+
 

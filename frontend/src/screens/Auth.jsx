@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useSignIn, useSignUp, useClerk } from '@clerk/clerk-react';
 import Logo from '../components/Logo';
 
 const COUNTRIES = [
-    { code: '+92', name: 'PK', length: 10, pattern: /^3\d{9}$/, placeholder: '3XXXXXXXXX', errorMsg: 'Please enter a valid 10-digit mobile number starting with 3.' },
-    { code: '+1', name: 'US/CA', length: 10, pattern: /^[2-9]\d{9}$/, placeholder: 'NXXNXXXXXX', errorMsg: 'Please enter a valid 10-digit US/CA phone number.' },
-    { code: '+44', name: 'UK', length: 10, pattern: /^7\d{9}$/, placeholder: '7XXXXXXXXX', errorMsg: 'Please enter a valid 10-digit UK mobile number starting with 7.' },
-    { code: '+966', name: 'SA', length: 9, pattern: /^5\d{8}$/, placeholder: '5XXXXXXXX', errorMsg: 'Please enter a valid 9-digit Saudi mobile number starting with 5.' },
-    { code: '+971', name: 'AE', length: 9, pattern: /^5\d{8}$/, placeholder: '5XXXXXXXX', errorMsg: 'Please enter a valid 9-digit UAE mobile number starting with 5.' }
+    { code: '+92', name: 'PK', length: 10, pattern: /^3\d{9}$/, placeholder: '3001234567', errorMsg: 'Please enter a valid 10-digit mobile number starting with 3.' },
+    { code: '+1', name: 'US/CA', length: 10, pattern: /^[2-9]\d{9}$/, placeholder: '2015550123', errorMsg: 'Please enter a valid 10-digit US/CA phone number.' },
+    { code: '+44', name: 'UK', length: 10, pattern: /^7\d{9}$/, placeholder: '7911123456', errorMsg: 'Please enter a valid 10-digit UK mobile number starting with 7.' },
+    { code: '+966', name: 'SA', length: 9, pattern: /^5\d{8}$/, placeholder: '501234567', errorMsg: 'Please enter a valid 9-digit Saudi mobile number starting with 5.' },
+    { code: '+971', name: 'AE', length: 9, pattern: /^5\d{8}$/, placeholder: '501234567', errorMsg: 'Please enter a valid 9-digit UAE mobile number starting with 5.' }
 ];
 
 const validateEmail = (email) => {
@@ -38,10 +37,6 @@ const validateMobile = (mobile, pattern) => {
 export default function Auth() {
     const navigate = useNavigate();
     const location = useLocation();
-    const clerk = useClerk();
-
-    const { signIn, isLoaded: signInLoaded } = useSignIn();
-    const { signUp, isLoaded: signUpLoaded } = useSignUp();
 
     const [isLogin, setIsLogin] = useState(location.pathname !== '/signup');
 
@@ -73,24 +68,26 @@ export default function Auth() {
     }, [location, navigate]);
 
     const handleGoogleAuth = async () => {
-        if (!signInLoaded || !signUpLoaded || googleLoading || loading) return;
+        if (googleLoading || loading) return;
         setGoogleLoading(true);
         setDialogError('');
 
-        sessionStorage.setItem('oauth_intent', 'login');
-
-        if (clerk.session) {
-            navigate('/sso-callback?action=login');
-            return;
-        }
+        const action = isLogin ? 'login' : 'signup';
 
         try {
-            await signIn.authenticateWithRedirect({
-                strategy: 'oauth_google',
-                redirectUrl: window.location.origin + '/',
-                redirectUrlComplete: window.location.origin + '/sso-callback?action=login',
-                additionalData: { prompt: 'select_account' }
-            });
+            const response = await fetch(`/api/auth/google-url?action=${action}`);
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to initialize Google login');
+            }
+
+            if (data.url) {
+                // Redirect user to the Supabase Google OAuth page
+                window.location.href = data.url;
+            } else {
+                throw new Error('Google authorization URL not found.');
+            }
         } catch (err) {
             setDialogError(err.message || 'Google sign-in failed. Please try again.');
             setGoogleLoading(false);
@@ -452,13 +449,49 @@ export default function Auth() {
                             </div>
                         )}
 
-                        <div id="clerk-captcha"></div>
-
                         <button type="submit" className="btn-primary" disabled={loading || googleLoading}>
                             {loading ? 'Signing up...' : 'Sign Up'}
                         </button>
 
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '14px 0 10px' }}>
+                            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }} />
+                            <span style={{ fontSize: '11px', color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>or continue with</span>
+                            <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }} />
+                        </div>
 
+                        <button
+                            type="button"
+                            onClick={handleGoogleAuth}
+                            disabled={googleLoading || loading}
+                            style={{
+                                width: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '10px',
+                                padding: '11px 16px',
+                                background: 'rgba(255,255,255,0.06)',
+                                border: '1px solid rgba(255,255,255,0.14)',
+                                borderRadius: '12px',
+                                color: 'var(--text-light)',
+                                fontSize: '13px',
+                                fontWeight: '600',
+                                cursor: googleLoading || loading ? 'not-allowed' : 'pointer',
+                                opacity: googleLoading || loading ? 0.6 : 1,
+                                transition: 'all 0.2s',
+                                marginBottom: '4px'
+                            }}
+                            onMouseOver={e => { if (!googleLoading && !loading) e.currentTarget.style.background = 'rgba(255,255,255,0.11)'; }}
+                            onMouseOut={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05" />
+                                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                            </svg>
+                            {googleLoading ? 'Connecting...' : 'Continue with Google'}
+                        </button>
 
                         <p className="mobile-toggle">
                             Already have an account? <span onClick={() => { setIsLogin(true); navigate('/login', { replace: true }); }}>Log in</span>
@@ -509,8 +542,6 @@ export default function Auth() {
                         <button type="button" className="forgot-link" disabled={loading} onClick={handleForgotPasswordClick} style={{ marginBottom: 20 }}>
                             forgot password?
                         </button>
-
-                        <div id="clerk-captcha"></div>
 
                         <button type="submit" className="btn-primary" disabled={loading || googleLoading}>
                             {loading ? 'Logging in...' : 'Log In'}
