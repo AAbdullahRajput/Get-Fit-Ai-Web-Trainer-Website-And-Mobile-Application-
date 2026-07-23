@@ -57,8 +57,7 @@ export default function PrivacyPolicy() {
                             We use trusted third-party service providers to handle critical application infrastructure:
                         </p>
                         <ul>
-                            <li><strong>Clerk:</strong> We use Clerk to handle user authentication, single sign-on (SSO), and secure session management. Clerk's privacy policy applies to authentication logs and credentials.</li>
-                            <li><strong>Supabase:</strong> We use Supabase as our secure database provider to host and query your trainer and client datasets. Your data is encrypted in transit and at rest.</li>
+                            <li><strong>Supabase:</strong> We use Supabase to handle user authentication, database hosting, single sign-on (SSO), and secure session management. Your data is encrypted in transit and at rest, and Supabase's privacy policy applies to authentication and database logs.</li>
                         </ul>
                     </section>
 
