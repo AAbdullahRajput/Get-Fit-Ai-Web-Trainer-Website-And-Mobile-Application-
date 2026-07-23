@@ -8,6 +8,8 @@ import Dashboard from './screens/Dashboard'
 import Slots from './screens/Slots'
 import SlotsTester from './screens/SlotsTester'
 import SsoCallback from './screens/SsoCallback'
+import PrivacyPolicy from './screens/PrivacyPolicy'
+import TermsConditions from './screens/TermsConditions'
 
 export default function App() {
   return (
@@ -25,6 +27,8 @@ export default function App() {
             <Route path="/slots" element={<Slots />} />
             <Route path="/slots-tester" element={<SlotsTester />} />
             <Route path="/sso-callback" element={<SsoCallback />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms-conditions" element={<TermsConditions />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>

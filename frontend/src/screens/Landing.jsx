@@ -97,8 +97,18 @@ export default function Landing() {
             {/* Footer */}
             <footer className="landing-footer">
                 <div className="footer-content">
-                    <Logo size={40} className="footer-logo" />
-                    <p className="footer-text">&copy; 2026 GetFit. All rights reserved. Designed for elite coaches.</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <Logo size={40} className="footer-logo" />
+                        <p className="footer-text" style={{ margin: 0 }}>&copy; 2026 GetFit. All rights reserved. Designed for elite coaches.</p>
+                    </div>
+                    <div className="footer-links" style={{ display: 'flex', gap: '20px' }}>
+                        <span className="footer-nav-link" onClick={() => navigate('/privacy-policy')}>
+                            Privacy Policy
+                        </span>
+                        <span className="footer-nav-link" onClick={() => navigate('/terms-conditions')}>
+                            Terms & Conditions
+                        </span>
+                    </div>
                 </div>
             </footer>
         </div>
