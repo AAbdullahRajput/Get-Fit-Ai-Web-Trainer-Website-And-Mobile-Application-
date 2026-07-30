@@ -544,7 +544,9 @@ const getGoogleOAuthUrl = async (req, res) => {
 
     // Determine the redirect URL back to the frontend SSO callback page
     const isLocal = req.get('host').includes('localhost') || req.get('host').includes('127.0.0.1');
-    const frontendHost = isLocal ? 'http://localhost:5173' : `${req.protocol}://${req.get('host')}`;
+    const frontendHost = isLocal 
+      ? 'http://localhost:5173' 
+      : (process.env.FRONTEND_URL || `${req.protocol}://${req.get('host')}`);
     const redirectUrl = `${frontendHost}/sso-callback?action=${action || 'login'}`;
 
     const { data, error } = await supabaseAuth.auth.signInWithOAuth({
