@@ -42,6 +42,10 @@ export default function Landing() {
 
                 {/* Decorative Visual Element */}
                 <div className="hero-visual">
+                    <div className="hero-image-wrapper">
+                        <img src="/hero-phone.png" alt="GetFit Showcase" className="hero-showcase-image" />
+                        <div className="hero-image-overlay"></div>
+                    </div>
                     <div className="floating-card card-1">
                         <div className="stat">18</div>
                         <div className="label">Active Clients</div>
