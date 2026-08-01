@@ -1,0 +1,334 @@
+/* Video Call Page Styles */
+
+.video-call-container {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--black, #0d0d0a);
+  overflow: hidden;
+  position: relative;
+}
+
+.video-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #14150f 0%, #0d0d0a 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.remote-video {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  border-radius: 0;
+}
+
+.video-placeholder {
+  text-align: center;
+  color: var(--lime, #d7ff1e);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* Picture-in-Picture (Local Video) */
+.video-pip {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  width: 200px;
+  height: 150px;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border: 2px solid var(--lime, #d7ff1e);
+  z-index: 10;
+  transition: all 0.3s ease;
+}
+
+.video-pip:hover {
+  transform: scale(1.05);
+  box-shadow: 0 12px 40px rgba(215, 255, 30, 0.25);
+}
+
+.local-video {
+  width: 100%;
+  height: 100%;
+  background: #000;
+  border-radius: 10px;
+}
+
+.pip-label {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(215, 255, 30, 0.9);
+  color: var(--black, #0d0d0a);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: bold;
+  z-index: 5;
+}
+
+/* Controls Bar */
+.call-controls {
+  height: 90px;
+  background: rgba(20, 21, 15, 0.95);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(215, 255, 30, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+  gap: 20px;
+  z-index: 20;
+}
+
+/* Control Sections */
+.controls-left,
+.controls-right {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex: 1;
+}
+
+.controls-center {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  justify-content: center;
+  flex: 1;
+}
+
+.controls-right {
+  justify-content: flex-end;
+}
+
+/* Duration & Info Text */
+.call-duration {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--lime, #d7ff1e);
+  font-family: 'Courier New', monospace;
+  min-width: 60px;
+}
+
+.caller-info {
+  color: #e0e0e0;
+  font-size: 14px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Control Buttons */
+.control-btn {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.15);
+  color: #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.1);
+}
+
+.control-btn.active {
+  background: rgba(215, 255, 30, 0.18);
+  color: var(--lime, #d7ff1e);
+  box-shadow: 0 0 20px rgba(215, 255, 30, 0.15);
+}
+
+.control-btn.inactive {
+  background: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+}
+
+.control-btn.end-call-btn {
+  background: rgba(239, 68, 68, 0.5);
+  color: #ff4757;
+  width: 60px;
+  height: 60px;
+  font-size: 28px;
+  margin: 0 10px;
+}
+
+.control-btn.end-call-btn:hover {
+  background: rgba(239, 68, 68, 0.7);
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.4);
+  transform: scale(1.15);
+}
+
+/* Status Badge */
+.status-badge {
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-badge.connecting {
+  background: rgba(215, 255, 30, 0.15);
+  color: var(--lime, #d7ff1e);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.status-badge.active {
+  background: rgba(215, 255, 30, 0.25);
+  color: var(--lime, #d7ff1e);
+}
+
+.status-badge.ended {
+  background: rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+/* Error State */
+.video-call-error {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #14150f 0%, #0d0d0a 100%);
+  color: white;
+  text-align: center;
+  padding: 20px;
+}
+
+.video-call-error h2 {
+  font-size: 28px;
+  margin-bottom: 10px;
+  color: var(--lime, #d7ff1e);
+}
+
+.video-call-error p {
+  font-size: 16px;
+  color: #d0d0d0;
+  margin-bottom: 30px;
+  max-width: 400px;
+}
+
+.video-call-error button {
+  padding: 12px 30px;
+  font-size: 16px;
+  background: var(--lime, #d7ff1e);
+  color: var(--black, #0d0d0a);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.video-call-error button:hover {
+  filter: brightness(1.1);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(215, 255, 30, 0.3);
+}
+
+/* Pulse Animation */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .video-pip {
+    width: 120px;
+    height: 90px;
+    bottom: 110px;
+    right: 10px;
+  }
+
+  .pip-label {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+
+  .call-controls {
+    height: 100px;
+    padding: 0 15px;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .controls-left,
+  .controls-center,
+  .controls-right {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .call-duration {
+    font-size: 18px;
+  }
+
+  .control-btn {
+    width: 45px;
+    height: 45px;
+    font-size: 20px;
+  }
+
+  .control-btn.end-call-btn {
+    width: 55px;
+    height: 55px;
+    font-size: 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  .video-pip {
+    width: 100px;
+    height: 75px;
+    bottom: 95px;
+    right: 5px;
+  }
+
+  .call-controls {
+    height: 80px;
+    padding: 0 10px;
+  }
+
+  .caller-info {
+    font-size: 12px;
+  }
+
+  .control-btn {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+}

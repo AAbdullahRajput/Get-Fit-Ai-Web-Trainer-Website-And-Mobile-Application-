@@ -654,4 +654,24 @@ class SupabaseService {
 
     return clientsMap.values.toList();
   }
+
+  // -----------------------------------------
+  // CALL SESSIONS (Call History)
+  // -----------------------------------------
+
+  Future<List<Map<String, dynamic>>> getCallSessionsForAppointment(String appointmentId) async {
+    try {
+      debugPrint('\x1B[33m[API] GET call_sessions | appointment: $appointmentId\x1B[0m');
+      final data = await client
+          .from('call_sessions')
+          .select()
+          .eq('appointment_id', appointmentId)
+          .order('created_at', ascending: false);
+      debugPrint('\x1B[32m[API] 200 OK | CallSessions: ${data.length}\x1B[0m');
+      return List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('\x1B[31m[API] ERROR | getCallSessionsForAppointment | $e\x1B[0m');
+      return [];
+    }
+  }
 }

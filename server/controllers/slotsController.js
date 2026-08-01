@@ -351,6 +351,27 @@ const getClients = async (req, res) => {
       }
     }
 
+    // 2b. Fetch call sessions linked to these appointments, so the trainer can
+    // see whether a call actually happened for a given booking and how long it lasted.
+    const appointmentIds = appointments.map(a => a.id).filter(Boolean);
+    let callsByAppointment = {};
+    if (appointmentIds.length > 0) {
+      const { data: calls, error: callsError } = await supabaseDb
+        .from('call_sessions')
+        .select('id, appointment_id, status, connected_at, ended_at, duration_seconds, created_at')
+        .in('appointment_id', appointmentIds)
+        .order('created_at', { ascending: true });
+
+      if (callsError) {
+        console.error('getClients call_sessions DB error:', callsError);
+      } else if (calls) {
+        calls.forEach(c => {
+          if (!callsByAppointment[c.appointment_id]) callsByAppointment[c.appointment_id] = [];
+          callsByAppointment[c.appointment_id].push(c);
+        });
+      }
+    }
+
     // 3. Aggregate appointments by client
     const clientsMap = {};
     appointments.forEach(appt => {
@@ -369,13 +390,18 @@ const getClients = async (req, res) => {
         };
       }
 
+      const calls = callsByAppointment[appt.id] || [];
+      const totalCallSeconds = calls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
+
       clientsMap[clientId].booked_slots.push({
         id: appt.id,
         slot_date: appt.appointment_date,
         start_time: appt.start_time,
         end_time: appt.end_time,
         price: appt.price,
-        status: appt.status
+        status: appt.status,
+        calls,
+        total_call_seconds: totalCallSeconds
       });
     });
 

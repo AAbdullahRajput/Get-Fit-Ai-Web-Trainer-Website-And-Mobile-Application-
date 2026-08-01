@@ -10,7 +10,11 @@ import '../data/models/slot.dart';
 import '../data/models/client.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/services/notification_service.dart';
+import '../core/services/call_service.dart';
+import 'call/incoming_call_page.dart';
+import 'call/outgoing_call_page.dart';
 import 'auth_screen.dart';
+import 'dart:async';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -27,10 +31,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Trainer? _trainer;
   bool _isLoadingTrainer = true;
+  String? _realtimeInitializedForTrainerId;
   String? _historyFilterEmail;
   String? _historyFilterName;
   RealtimeChannel? _appointmentsChannel;
   final NotificationService _notificationService = NotificationService();
+  final CallService _callService = CallService();
 
   @override
   void initState() {
@@ -118,25 +124,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
+  Future<void> _handleIncomingCall(Map<String, dynamic> call) async {
+    final callerUserId = call['caller_user_id'] as String;
+    String callerName = 'Someone';
+    String? callerImage;
+    try {
+      final caller = await _supabaseService.client
+          .from('users')
+          .select('username, avatar_url')
+          .eq('id', callerUserId)
+          .maybeSingle();
+      callerName = caller?['username'] as String? ?? 'Someone';
+      callerImage = caller?['avatar_url'] as String?;
+    } catch (e) {
+      debugPrint('Error fetching caller info: $e');
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => IncomingCallPage(
+          callId: call['id'] as String,
+          channelName: call['channel_name'] as String,
+          callerName: callerName,
+          callerImageUrl: callerImage,
+        ),
+      ),
+    );
+  }
+
   void _cleanupRealtime() {
     if (_appointmentsChannel != null) {
       _supabaseService.client.removeChannel(_appointmentsChannel!);
       _appointmentsChannel = null;
       debugPrint('[Realtime] Unsubscribed from trainer_appointments');
     }
+    _callService.stopListeningForIncomingCalls();
+    _realtimeInitializedForTrainerId = null;
   }
 
   void _initRealtimeNotifications() {
     if (_trainer == null) return;
-    
+    final String trainerId = _trainer!.id;
+
+    // Skip if already initialized for this exact trainer — avoids the
+    // subscribe/unsubscribe/resubscribe loop when this gets called twice
+    // during _loadTrainerData (cached load + refreshed profile load).
+    if (_realtimeInitializedForTrainerId == trainerId) {
+      debugPrint('[Realtime] Already initialized for trainer: $trainerId — skipping');
+      return;
+    }
+
     // Cleanup any existing subscription
     _cleanupRealtime();
-
-    final String trainerId = _trainer!.id;
+    _realtimeInitializedForTrainerId = trainerId;
     debugPrint('[Realtime] Initializing subscription for trainer: $trainerId');
 
     // Request permissions on startup
     _notificationService.requestPermissions();
+
+    // Listen for incoming calls targeting this trainer
+   _callService.listenForIncomingCalls(trainerId, (call) {
+  final initiatedBy = call['initiated_by'] as String? ?? '';
+  if (initiatedBy == 'trainer') {
+    debugPrint('[CALL] Skipping incoming — trainer initiated this call');
+    return;
+  }
+  _handleIncomingCall(call);
+});
 
     // Subscribe to all insertions on the trainer_appointments table
     _appointmentsChannel = _supabaseService.client.channel('public:trainer_appointments');
@@ -450,6 +505,7 @@ class _HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<_HomeTab> {
   final SupabaseService _supabaseService = SupabaseService();
+  final _callService = CallService();
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
   final _searchFocusNode = FocusNode();
@@ -458,15 +514,23 @@ class _HomeTabState extends State<_HomeTab> {
   bool _isLoading = true;
   String _searchQuery = '';
   bool _showAllClients = false;
+  Timer? _ticker;
 
   @override
   void initState() {
     super.initState();
     _fetchClients();
+    // Keep the "ongoing session" time window live — without this, the Call
+    // button could stay visible/tappable past end_time until some unrelated
+    // rebuild happened to occur.
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
+    _ticker?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
     _searchFocusNode.dispose();
@@ -513,6 +577,20 @@ class _HomeTabState extends State<_HomeTab> {
         : filteredClients.take(5).toList();
 
     final now = DateTime.now();
+    final todayStr = now.toString().split(' ')[0];
+    final ongoingBookings = <Map<String, dynamic>>[];
+    for (final c in _clients) {
+      for (final s in c.bookedSlots) {
+        if (s.slotDate != todayStr) continue;
+        try {
+          final start = DateTime.parse('${s.slotDate}T${s.startTime}');
+          final end = DateTime.parse('${s.slotDate}T${s.endTime}');
+          if (!now.isBefore(start) && now.isBefore(end)) {
+            ongoingBookings.add({'client': c, 'slot': s});
+          }
+        } catch (_) {}
+      }
+    }
 
     final upcomingSessionsCount = _clients.fold<int>(0, (sum, c) {
       return sum + c.bookedSlots.where((s) {
@@ -712,6 +790,109 @@ class _HomeTabState extends State<_HomeTab> {
           ),
           const SizedBox(height: 28),
 
+          if (ongoingBookings.isNotEmpty) ...[
+            Text(
+              'ONGOING SESSION',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+                color: isLight ? Colors.black38 : AppColors.textDim,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...ongoingBookings.map((entry) {
+              final client = entry['client'] as Client;
+              final slot = entry['slot'];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  gradient: isLight ? null : AppColors.cardGrad,
+                  color: isLight ? AppColors.limeDim.withOpacity(0.08) : null,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: (isLight ? AppColors.limeDim : AppColors.lime).withOpacity(0.35)),
+                ),
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: isLight ? AppColors.limeDim : AppColors.lime,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Live now with ${client.name}',
+                                style: TextStyle(
+                                  color: isLight ? AppColors.black : AppColors.textLight,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                '${widget.formatTime(slot.startTime)} - ${widget.formatTime(slot.endTime)}',
+                                style: TextStyle(
+                                  color: isLight ? AppColors.limeDim : AppColors.lime,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _showBookingSummary(context, slot, isLight),
+                            icon: Icon(Icons.info_outline, size: 16, color: isLight ? AppColors.limeDim : AppColors.lime),
+                            label: Text(
+                              'View',
+                              style: TextStyle(color: isLight ? AppColors.limeDim : AppColors.lime, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: (isLight ? AppColors.limeDim : AppColors.lime).withOpacity(0.35)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () => _callClient(client, slot),
+                            icon: const Icon(Icons.call, size: 16),
+                            label: const Text('Call', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isLight ? AppColors.limeDim : AppColors.lime,
+                              foregroundColor: isLight ? Colors.white : AppColors.black,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 24),
+          ],
+
           // Your Clients Section Header
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -812,32 +993,36 @@ class _HomeTabState extends State<_HomeTab> {
                       )
                     ] : null,
                   ),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: isLight ? Colors.black.withOpacity(0.05) : Colors.white10,
-                      backgroundImage: client.avatarUrl.isNotEmpty
-                          ? NetworkImage(client.avatarUrl)
-                          : null,
-                      child: client.avatarUrl.isEmpty
-                          ? Icon(
-                              Icons.person,
-                              color: isLight ? Colors.black54 : AppColors.textDim,
-                            )
-                          : null,
-                    ),
-                    title: Text(
-                      client.name,
-                      style: TextStyle(
-                        color: isLight ? AppColors.black : AppColors.textLight,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                  clipBehavior: Clip.antiAlias,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: isLight ? Colors.black.withOpacity(0.05) : Colors.white10,
+                        backgroundImage: client.avatarUrl.isNotEmpty
+                            ? NetworkImage(client.avatarUrl)
+                            : null,
+                        child: client.avatarUrl.isEmpty
+                            ? Icon(
+                                Icons.person,
+                                color: isLight ? Colors.black54 : AppColors.textDim,
+                              )
+                            : null,
                       ),
+                      title: Text(
+                        client.name,
+                        style: TextStyle(
+                          color: isLight ? AppColors.black : AppColors.textLight,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      onTap: () {
+                        if (widget.onClientSelected != null) {
+                          widget.onClientSelected!(client.email, client.name);
+                        }
+                      },
                     ),
-                    onTap: () {
-                      if (widget.onClientSelected != null) {
-                        widget.onClientSelected!(client.email, client.name);
-                      }
-                    },
                   ),
                 );
               },
@@ -866,6 +1051,127 @@ class _HomeTabState extends State<_HomeTab> {
               ),
             ],
         ],
+      ),
+    );
+  }
+
+  void _showBookingSummary(BuildContext context, dynamic slot, bool isLight) {
+    final labelColor = isLight ? AppColors.black : AppColors.textLight;
+    final subLabelColor = isLight ? Colors.black54 : AppColors.textDim;
+    final cardBgColor = isLight ? Colors.white : AppColors.nearBlack;
+    final borderColor = isLight ? Colors.black12 : Colors.white10;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cardBgColor,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: isLight ? Colors.black12 : Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Text('BOOKING SUMMARY', style: TextStyle(fontFamily: 'Archivo Black', fontSize: 16, color: labelColor)),
+                Divider(color: borderColor, height: 24),
+                Text('CLIENT', style: TextStyle(color: subLabelColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text(slot.userName ?? 'Client', style: TextStyle(color: labelColor, fontWeight: FontWeight.bold, fontSize: 14)),
+                Text(slot.userEmail ?? '', style: TextStyle(color: subLabelColor, fontSize: 12)),
+                const SizedBox(height: 20),
+                Text('DATE & TIME', style: TextStyle(color: subLabelColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text('${slot.slotDate} • ${widget.formatTime(slot.startTime)} - ${widget.formatTime(slot.endTime)}', style: TextStyle(color: labelColor, fontSize: 13)),
+                const SizedBox(height: 20),
+                Text('SESSION RATE', style: TextStyle(color: subLabelColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text('\$${slot.price.toStringAsFixed(2)} USD', style: TextStyle(color: labelColor, fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'Archivo Black')),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isLight ? Colors.black.withOpacity(0.05) : Colors.white10,
+                      foregroundColor: labelColor,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _callClient(Client client, BookedSlot slot) async {
+    final String? userId = client.id;
+    if (userId == null || userId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not find this client\'s user ID to call.')),
+      );
+      return;
+    }
+
+    // Hard guard: only allow the call if we're currently within the slot's
+    // start_time -> end_time window. Don't rely solely on the button being
+    // hidden outside that window.
+    try {
+      final start = DateTime.parse('${slot.slotDate}T${slot.startTime}');
+      final end = DateTime.parse('${slot.slotDate}T${slot.endTime}');
+      final now = DateTime.now();
+      if (now.isBefore(start) || !now.isBefore(end)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You can only call during the scheduled appointment time.')),
+        );
+        return;
+      }
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not verify appointment time.')),
+      );
+      return;
+    }
+
+    final result = await _callService.startCall(
+      trainerId: widget.trainer.id,
+      userId: userId,
+      appointmentId: slot.id,
+    );
+
+    if (result == null || !mounted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to start the call. Please try again.')),
+        );
+      }
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OutgoingCallPage(
+          callId: result['id'] as String,
+          channelName: result['channel_name'] as String,
+          trainerName: client.name,
+          trainerImageUrl: client.avatarUrl.isNotEmpty ? client.avatarUrl : null,
+        ),
       ),
     );
   }
@@ -1049,6 +1355,7 @@ class _BookingsTab extends StatefulWidget {
 
 class _BookingsTabState extends State<_BookingsTab> {
   final SupabaseService _supabaseService = SupabaseService();
+  final _callService = CallService();
   List<TrainerSlot> _bookedSlots = [];
   bool _isLoading = true;
 
@@ -1072,11 +1379,18 @@ class _BookingsTabState extends State<_BookingsTab> {
           .map((e) => TrainerSlot.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      // Keep only slots from today onwards to represent upcoming bookings
-      final todayStr = DateTime.now().toString().split(' ')[0];
-      final upcoming = slots
-          .where((s) => s.slotDate.compareTo(todayStr) >= 0)
-          .toList();
+      // Keep only slots that haven't started yet — ongoing/live sessions now
+      // show separately on the Home tab.
+      final now = DateTime.now();
+      final upcoming = slots.where((s) {
+        try {
+          final slotStartDateTime = DateTime.parse('${s.slotDate}T${s.startTime}');
+          return slotStartDateTime.isAfter(now);
+        } catch (_) {
+          final todayStr = now.toString().split(' ')[0];
+          return s.slotDate.compareTo(todayStr) > 0;
+        }
+      }).toList();
 
       setState(() {
         _bookedSlots = upcoming;
@@ -1175,8 +1489,11 @@ class _BookingsTabState extends State<_BookingsTab> {
                     ] : null,
                   ),
                   padding: const EdgeInsets.all(16),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      Row(
+                        children: [
                       // Date circle indicator
                       Container(
                         width: 52,
@@ -1264,12 +1581,140 @@ class _BookingsTabState extends State<_BookingsTab> {
                           color: labelColor,
                         ),
                       ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _showBookingSummary(context, slot, isLight, labelColor, subLabelColor, cardBgColor, borderColor),
+                          icon: Icon(Icons.info_outline, size: 16, color: isLight ? AppColors.limeDim : AppColors.lime),
+                          label: Text(
+                            'View',
+                            style: TextStyle(color: isLight ? AppColors.limeDim : AppColors.lime, fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: (isLight ? AppColors.limeDim : AppColors.lime).withOpacity(0.35)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 );
               },
             ),
         ],
+      ),
+    );
+  }
+
+  void _showBookingSummary(BuildContext context, TrainerSlot slot, bool isLight, Color labelColor, Color subLabelColor, Color cardBgColor, Color borderColor) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cardBgColor,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: isLight ? Colors.black12 : Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Text('BOOKING SUMMARY', style: TextStyle(fontFamily: 'Archivo Black', fontSize: 16, color: labelColor)),
+                Divider(color: borderColor, height: 24),
+                Text('CLIENT', style: TextStyle(color: subLabelColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text(slot.bookedByName ?? 'Client', style: TextStyle(color: labelColor, fontWeight: FontWeight.bold, fontSize: 14)),
+                Text(slot.bookedByEmail ?? '', style: TextStyle(color: subLabelColor, fontSize: 12)),
+                const SizedBox(height: 20),
+                Text('DATE & TIME', style: TextStyle(color: subLabelColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text('${slot.slotDate} • ${widget.formatTime(slot.startTime)} - ${widget.formatTime(slot.endTime)}', style: TextStyle(color: labelColor, fontSize: 13)),
+                const SizedBox(height: 20),
+                Text('SESSION RATE', style: TextStyle(color: subLabelColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                Text('\$${slot.price.toStringAsFixed(2)} USD', style: TextStyle(color: labelColor, fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'Archivo Black')),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isLight ? Colors.black.withOpacity(0.05) : Colors.white10,
+                      foregroundColor: labelColor,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _callClient(TrainerSlot slot) async {
+    final String? userId = slot.bookedByUserId;
+    if (userId == null || userId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not find this client\'s user ID to call.')),
+      );
+      return;
+    }
+
+    // TrainerSlot doesn't carry an avatar, so fetch it from users table.
+    String? clientImageUrl;
+    try {
+      final userRow = await _supabaseService.client
+          .from('users')
+          .select('avatar_url')
+          .eq('id', userId)
+          .maybeSingle();
+      clientImageUrl = userRow?['avatar_url'] as String?;
+    } catch (e) {
+      debugPrint('Error fetching client avatar: $e');
+    }
+
+    final result = await _callService.startCall(
+      trainerId: widget.trainerId,
+      userId: userId,
+      appointmentId: slot.id,
+    );
+
+    if (result == null || !mounted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to start the call. Please try again.')),
+        );
+      }
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OutgoingCallPage(
+          callId: result['id'] as String,
+          channelName: result['channel_name'] as String,
+          trainerName: slot.bookedByName ?? 'Client',
+          trainerImageUrl: clientImageUrl,
+        ),
       ),
     );
   }
@@ -2091,7 +2536,23 @@ class _HistoryTabState extends State<_HistoryTab> {
     }
   }
 
-  void _showSessionDetails(BookedSlot slot) {
+  Future<List<Map<String, dynamic>>> _fetchCallSessionsForAppointment(String appointmentId) async {
+    try {
+      final rows = await _supabaseService.dbClient
+          .from('call_sessions')
+          .select('*')
+          .eq('appointment_id', appointmentId)
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(rows as List);
+    } catch (e) {
+      debugPrint('Error fetching call sessions: $e');
+      return [];
+    }
+  }
+
+  Future<void> _showSessionDetails(BookedSlot slot) async {
+    final callSessions = await _fetchCallSessionsForAppointment(slot.id);
+    if (!mounted) return;
     final isLight = Theme.of(context).brightness == Brightness.light;
     final labelColor = isLight ? AppColors.black : AppColors.textLight;
     final subLabelColor = isLight ? Colors.black54 : AppColors.textDim;
@@ -2101,13 +2562,24 @@ class _HistoryTabState extends State<_HistoryTab> {
     showModalBottomSheet(
       context: context,
       backgroundColor: bottomSheetBg,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(
+        int visibleCallCount = 5;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.75,
+              minChildSize: 0.4,
+              maxChildSize: 0.92,
+              expand: false,
+              builder: (context, scrollController) {
+                return SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                  child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -2236,6 +2708,114 @@ class _HistoryTabState extends State<_HistoryTab> {
               ),
               const SizedBox(height: 24),
 
+              // Call History Section
+              if (callSessions.isNotEmpty) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'CALL HISTORY',
+                      style: TextStyle(color: subLabelColor, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      '${callSessions.length} call${callSessions.length == 1 ? '' : 's'} • ${callSessions.where((c) => c['status'] == 'ended').length} completed',
+                      style: TextStyle(color: subLabelColor, fontSize: 11),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ...List.generate(
+                  callSessions.length > visibleCallCount ? visibleCallCount : callSessions.length,
+                  (index) {
+                    final call = callSessions[index];
+                    final status = call['status'] as String? ?? 'unknown';
+                    final initiatedBy = call['initiated_by'] as String? ?? 'user';
+                    final duration = call['duration_seconds'] as int?;
+                    final createdAt = DateTime.tryParse(call['created_at'] as String? ?? '');
+
+                    Color statusColor;
+                    IconData statusIcon;
+                    switch (status) {
+                      case 'ended':
+                        statusColor = isLight ? AppColors.limeDim : AppColors.lime;
+                        statusIcon = Icons.call;
+                        break;
+                      case 'declined':
+                        statusColor = Colors.redAccent;
+                        statusIcon = Icons.call_end;
+                        break;
+                      case 'missed':
+                        statusColor = Colors.orangeAccent;
+                        statusIcon = Icons.phone_missed;
+                        break;
+                      default:
+                        statusColor = subLabelColor;
+                        statusIcon = Icons.phone;
+                    }
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          Icon(statusIcon, size: 16, color: statusColor),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${status[0].toUpperCase()}${status.substring(1)} • called by ${initiatedBy == 'trainer' ? 'you' : 'client'}',
+                                  style: TextStyle(color: labelColor, fontSize: 12, fontWeight: FontWeight.w600),
+                                ),
+                                if (createdAt != null)
+                                  Text(
+                                    createdAt.toLocal().toString().split('.').first,
+                                    style: TextStyle(color: subLabelColor, fontSize: 10),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            duration != null && duration > 0 ? '${duration}s' : 'N/A',
+                            style: TextStyle(color: subLabelColor, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                if (callSessions.length > 5) ...[
+                  const SizedBox(height: 4),
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: () {
+                        setSheetState(() {
+                          if (visibleCallCount >= callSessions.length) {
+                            visibleCallCount = 5;
+                          } else {
+                            visibleCallCount = (visibleCallCount + 5).clamp(0, callSessions.length);
+                          }
+                        });
+                      },
+                      icon: Icon(
+                        visibleCallCount >= callSessions.length ? Icons.expand_less : Icons.expand_more,
+                        color: isLight ? AppColors.limeDim : AppColors.lime,
+                        size: 18,
+                      ),
+                      label: Text(
+                        visibleCallCount >= callSessions.length ? 'Show Less' : 'Load More',
+                        style: TextStyle(
+                          color: isLight ? AppColors.limeDim : AppColors.lime,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 24),
+              ],
+
               // Close Button
               SizedBox(
                 width: double.infinity,
@@ -2252,8 +2832,12 @@ class _HistoryTabState extends State<_HistoryTab> {
                   child: const Text('Close'),
                 ),
               ),
-            ],
-          ),
+                  ],
+                ),
+                );
+              },
+            );
+          },
         );
       },
     );

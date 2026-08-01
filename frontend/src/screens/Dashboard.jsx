@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { HomeIcon, HistoryIcon, BookingsIcon, ProfileIcon, SlotsIcon, FolderIcon, ClockIcon, PartyIcon, WarningIcon } from '../components/NavIcons'
+import { HomeIcon, HistoryIcon, BookingsIcon, ProfileIcon, SlotsIcon, FolderIcon, ClockIcon, PartyIcon, WarningIcon, PhoneOffIcon } from '../components/NavIcons'
+import IncomingCallListener from '../components/IncomingCallListener'
+import RealtimeService from '../services/RealtimeService';
 
 const getMobileDisplay = (phone) => {
     if (!phone) return '';
@@ -102,6 +104,7 @@ export default function Dashboard() {
     const [visibleHomeClientsCount, setVisibleHomeClientsCount] = useState(5);
     const [visibleBookingsCount, setVisibleBookingsCount] = useState(5);
     const [profileErrors, setProfileErrors] = useState({ email: '', mobile: '' });
+    const [visibleCallsCounts, setVisibleCallsCounts] = useState({});
 
     const fetchClients = async () => {
         setClientsLoading(true);
@@ -153,6 +156,38 @@ export default function Dashboard() {
         const ampm = hour >= 12 ? 'PM' : 'AM';
         const displayHour = hour % 12 === 0 ? 12 : hour % 12;
         return `${displayHour}:${parts[1]} ${ampm}`;
+    };
+
+    const formatCallDuration = (totalSeconds) => {
+        if (!totalSeconds) return '0s';
+        const mins = Math.floor(totalSeconds / 60);
+        const secs = totalSeconds % 60;
+        return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    };
+
+    const isCallActive = (app) => {
+        const now = new Date();
+        const start = new Date(`${app.slot_date}T${app.start_time}`);
+        const end = new Date(`${app.slot_date}T${app.end_time}`);
+        return now >= start && now <= end;
+    };
+
+    const handleStartCall = async (app) => {
+        try {
+            const channelName = `call_${Date.now()}_${trainer?.id || 'trainer'}`;
+            const call = await RealtimeService.startCall(
+                trainer?.id || localStorage.getItem('trainer_id'),
+                app.user_id,
+                app.id,
+                channelName
+            );
+            navigate(`/outgoing-call/${call.id}`, {
+                state: { clientName: app.clientName, clientAvatar: app.clientAvatar }
+            });
+        } catch (err) {
+            console.error('Failed to start call:', err);
+            setErrorMsg('Failed to start call: ' + (err.message || 'Unknown error'));
+        }
     };
 
     useEffect(() => {
@@ -460,6 +495,7 @@ export default function Dashboard() {
                             const allBookedSlots = clients.reduce((acc, c) => {
                                 const slotsWithClientInfo = c.booked_slots.map(slot => ({
                                     ...slot,
+                                    user_id: c.id,
                                     clientName: c.name,
                                     clientEmail: c.email
                                 }));
@@ -467,9 +503,9 @@ export default function Dashboard() {
                             }, []);
 
                             const upcomingAppointments = allBookedSlots.filter(s => {
-                                const slotDateTime = new Date(`${s.slot_date}T${s.start_time}`);
+                                const startDateTime = new Date(`${s.slot_date}T${s.start_time}`);
                                 const now = new Date();
-                                return slotDateTime >= now;
+                                return startDateTime > now; // hasn't started yet
                             }).sort((a, b) => {
                                 const dateCompare = a.slot_date.localeCompare(b.slot_date);
                                 if (dateCompare !== 0) return dateCompare;
@@ -503,6 +539,57 @@ export default function Dashboard() {
                                             style={{ padding: '6px 16px', fontSize: 12, width: 'auto', background: 'var(--lime)', color: 'var(--black)', border: 'none', borderRadius: '99px', fontWeight: '800', cursor: 'pointer' }}
                                         >
                                             VIEW
+                                        </button>
+                                    </div>
+                                );
+                            });
+                        })()}
+                    </div>
+                </div>
+
+                <div className="dash-section">
+                    <div className="section-head">
+                        <h3>Ongoing Appointment</h3>
+                    </div>
+                    <div className="session-list">
+                        {clientsLoading ? null : (() => {
+                            const allBookedSlots = clients.reduce((acc, c) => {
+                                const slotsWithClientInfo = c.booked_slots.map(slot => ({
+                                    ...slot,
+                                    user_id: c.id,
+                                    clientName: c.name,
+                                    clientEmail: c.email,
+                                    clientAvatar: c.avatar_url
+                                }));
+                                return [...acc, ...slotsWithClientInfo];
+                            }, []);
+
+                            const ongoingAppointments = allBookedSlots.filter(isCallActive);
+
+                            if (ongoingAppointments.length === 0) {
+                                return <div style={{ color: 'var(--text-dim)', fontSize: '13px', padding: '10px 0' }}>No session currently in progress.</div>;
+                            }
+
+                            return ongoingAppointments.map((app) => {
+                                const slotDateObj = new Date(app.slot_date + 'T00:00:00');
+                                const formattedDate = slotDateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+                                return (
+                                    <div className="session-card" key={app.id}>
+                                        <div className="session-time" style={{ color: '#10b981', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                                            <div style={{ fontWeight: 'bold' }}>{formattedDate}</div>
+                                            <div style={{ fontSize: '10px', marginTop: '2px', opacity: 0.8 }}>
+                                                {formatTime(app.start_time)} - {formatTime(app.end_time)}
+                                            </div>
+                                        </div>
+                                        <div className="session-info">
+                                            <div className="title">Personal Training Session</div>
+                                            <div className="sub">with {app.clientName}</div>
+                                        </div>
+                                        <button
+                                            onClick={() => handleStartCall(app)}
+                                            style={{ padding: '6px 16px', fontSize: 12, width: 'auto', background: '#10b981', color: '#fff', border: 'none', borderRadius: '99px', fontWeight: '800', cursor: 'pointer' }}
+                                        >
+                                            CALL
                                         </button>
                                     </div>
                                 );
@@ -1020,12 +1107,12 @@ export default function Dashboard() {
 
     const renderHistory = () => {
         const now = new Date();
-        // Keep only completed appointments and clients who have completed appointments
+        // Keep only truly completed appointments (end time has passed, excludes ongoing sessions)
         const historyClients = clients
             .map(c => {
                 const completedSlots = c.booked_slots.filter(s => {
-                    const slotDateTime = new Date(`${s.slot_date}T${s.start_time}`);
-                    return slotDateTime < now;
+                    const endDateTime = new Date(`${s.slot_date}T${s.end_time}`);
+                    return endDateTime < now;
                 });
                 return {
                     ...c,
@@ -1157,54 +1244,249 @@ export default function Dashboard() {
 
                                                             return (
                                                                 <div
-                                                                    key={s.id}
-                                                                    style={{
-                                                                        background: 'rgba(255, 255, 255, 0.02)',
-                                                                        borderRadius: '10px',
-                                                                        padding: '10px 12px',
-                                                                        display: 'flex',
-                                                                        justifyContent: 'space-between',
-                                                                        alignItems: 'center',
-                                                                        border: '1px solid rgba(255, 255, 255, 0.05)'
-                                                                    }}
-                                                                >
-                                                                    <div>
-                                                                        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-light)' }}>
-                                                                            {formattedDate}
-                                                                        </div>
-                                                                        <div style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                                                            <ClockIcon size={14} /> {formatTime(s.start_time)} - {formatTime(s.end_time)}
-                                                                        </div>
-                                                                    </div>
-                                                                    <div style={{ textAlign: 'right' }}>
-                                                                        <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--lime)' }}>
-                                                                            ${parseFloat(s.price).toFixed(2)}
-                                                                        </div>
-                                                                        <span style={{
-                                                                            fontSize: '9px',
-                                                                            fontWeight: '800',
-                                                                            background: statusBg,
-                                                                            color: statusColor,
-                                                                            padding: '2px 6px',
-                                                                            borderRadius: '99px',
-                                                                            display: 'inline-block',
-                                                                            marginTop: '4px',
-                                                                            textTransform: 'uppercase'
-                                                                        }}>
-                                                                            {displayStatus}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
+                                                    key={s.id}
+                                                    style={{
+                                                        background: 'rgba(255, 255, 255, 0.02)',
+                                                        borderRadius: '10px',
+                                                        padding: '10px 12px',
+                                                        border: '1px solid rgba(255, 255, 255, 0.05)'
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <div>
+                                                            <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-light)' }}>
+                                                                {formattedDate}
+                                                            </div>
+                                                            <div style={{ fontSize: '11.5px', color: 'var(--text-dim)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                                                <ClockIcon size={14} /> {formatTime(s.start_time)} - {formatTime(s.end_time)}
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ textAlign: 'right' }}>
+                                                            <div style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--lime)' }}>
+                                                                ${parseFloat(s.price).toFixed(2)}
+                                                            </div>
+                                                            <span style={{
+                                                                fontSize: '9px',
+                                                                fontWeight: '800',
+                                                                background: statusBg,
+                                                                color: statusColor,
+                                                                padding: '2px 6px',
+                                                                borderRadius: '99px',
+                                                                display: 'inline-block',
+                                                                marginTop: '4px',
+                                                                textTransform: 'uppercase'
+                                                            }}>
+                                                                {displayStatus}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+
+                                                    {s.calls && s.calls.length > 0 ? (() => {
+                                                        const visibleCount = visibleCallsCounts[s.id] || 5;
+                                                        const visibleCalls = s.calls.slice(0, visibleCount);
+                                                        const hasMoreCalls = s.calls.length > visibleCount;
+                                                        
+                                                        const getCallDirection = (call) => {
+                                                          if (call.initiated_by === 'trainer') {
+                                                            return { label: 'Trainer called', color: 'var(--lime)', icon: 'outgoing' };
+                                                          }
+                                                          return { label: 'Client called', color: '#60a5fa', icon: 'incoming' };
+                                                        };
+                                                        
+                                                        const getCallStatus = (call) => {
+                                                          if (!call.connected_at) {
+                                                            if (call.status === 'declined') {
+                                                              return {
+                                                                label: call.initiated_by === 'trainer' ? 'Client Declined' : 'Trainer Declined',
+                                                                color: '#ffc107',
+                                                                bg: 'rgba(255,193,7,0.12)',
+                                                                icon: 'decline'
+                                                              };
+                                                            }
+                                                            if (call.status === 'missed') {
+                                                              return {
+                                                                label: call.initiated_by === 'trainer' ? 'Client Missed' : 'Trainer Missed',
+                                                                color: '#ef4444',
+                                                                bg: 'rgba(239,68,68,0.12)',
+                                                                icon: 'missed'
+                                                              };
+                                                            }
+                                                          }
+                                                          if (call.status === 'ended' || call.status === 'accepted') {
+                                                            if (call.ended_by === 'trainer') {
+                                                              return {
+                                                                label: 'Trainer Hung Up',
+                                                                color: '#10b981',
+                                                                bg: 'rgba(16,185,129,0.12)',
+                                                                icon: 'ended'
+                                                              };
+                                                            }
+                                                            if (call.ended_by === 'client') {
+                                                              return {
+                                                                label: 'Client Hung Up',
+                                                                color: '#10b981',
+                                                                bg: 'rgba(16,185,129,0.12)',
+                                                                icon: 'ended'
+                                                              };
+                                                            }
+                                                            return {
+                                                              label: 'Call Ended',
+                                                              color: '#10b981',
+                                                              bg: 'rgba(16,185,129,0.12)',
+                                                              icon: 'ended'
+                                                            };
+                                                          }
+                                                          return {
+                                                            label: 'Unknown',
+                                                            color: '#6B7280',
+                                                            bg: 'rgba(107,126,128,0.12)',
+                                                            icon: 'unknown'
+                                                          };
+                                                        };
+                                                        
+                                                        const renderCallIcon = (type) => {
+                                                          switch(type) {
+                                                            case 'outgoing':
+                                                              return <PhoneOffIcon size={12} />;
+                                                            case 'incoming':
+                                                              return <PhoneOffIcon size={12} />;
+                                                            case 'decline':
+                                                              return <PhoneOffIcon size={12} />;
+                                                            case 'missed':
+                                                              return <ClockIcon size={12} />;
+                                                            case 'ended':
+                                                              return <PhoneOffIcon size={12} />;
+                                                            default:
+                                                              return <WarningIcon size={12} />;
+                                                          }
+                                                        };
+                                                        
+                                                        return (
+                                                            <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed rgba(255,255,255,0.08)' }}>
+                                                                <div style={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '6px',
+                                                                    fontSize: '11.5px',
+                                                                    color: 'var(--lime)',
+                                                                    marginBottom: '8px',
+                                                                    fontWeight: '600'
+                                                                }}>
+                                                                    <PhoneOffIcon size={13} />
+                                                                    <span>{s.calls.length} call{s.calls.length > 1 ? 's' : ''}</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                                    {visibleCalls.map((call, idx) => {
+                                                                        const direction = getCallDirection(call);
+                                                                        const status = getCallStatus(call);
+                                                                        const callTime = new Date(call.created_at);
+                                                                        const timeStr = callTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                                                                        const durationStr = call.duration_seconds 
+                                                                          ? `${Math.floor(call.duration_seconds / 60)}m ${call.duration_seconds % 60}s`
+                                                                          : '—';
+
+                                                                        return (
+                                                                            <div
+                                                                              key={idx}
+                                                                              style={{
+                                                                                display: 'flex',
+                                                                                justifyContent: 'space-between',
+                                                                                alignItems: 'center',
+                                                                                fontSize: '11px',
+                                                                                background: 'rgba(255,255,255,0.02)',
+                                                                                padding: '10px 12px',
+                                                                                borderRadius: '8px',
+                                                                                borderLeft: `3px solid ${status.color}`
+                                                                              }}
+                                                                            >
+                                                                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                                                                                <div
+                                                                                  style={{
+                                                                                    width: '28px',
+                                                                                    height: '28px',
+                                                                                    borderRadius: '50%',
+                                                                                    background: `${direction.color}22`,
+                                                                                    display: 'flex',
+                                                                                    alignItems: 'center',
+                                                                                    justifyContent: 'center',
+                                                                                    color: direction.color,
+                                                                                    fontSize: '13px',
+                                                                                    flexShrink: 0
+                                                                                  }}
+                                                                                >
+                                                                                  {renderCallIcon(direction.icon)}
+                                                                                </div>
+                                                                                <div style={{ flex: 1 }}>
+                                                                                  <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-light)' }}>
+                                                                                    {direction.label}
+                                                                                  </div>
+                                                                                  <div style={{ fontSize: '10px', color: 'var(--text-dim)', marginTop: '2px' }}>
+                                                                                    {timeStr} • {durationStr}
+                                                                                  </div>
+                                                                                </div>
+                                                                              </div>
+                                                                              <span
+                                                                                style={{
+                                                                                  fontSize: '8px',
+                                                                                  fontWeight: '800',
+                                                                                  background: status.bg,
+                                                                                  color: status.color,
+                                                                                  padding: '3px 8px',
+                                                                                  borderRadius: '99px',
+                                                                                  textTransform: 'uppercase',
+                                                                                  letterSpacing: '0.5px',
+                                                                                  whiteSpace: 'nowrap'
+                                                                                }}
+                                                                              >
+                                                                                {status.label}
+                                                                              </span>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                                {hasMoreCalls && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setVisibleCallsCounts(prev => ({ ...prev, [s.id]: visibleCount + 5 }));
+                                                                        }}
+                                                                        style={{
+                                                                            marginTop: '8px',
+                                                                            width: '100%',
+                                                                            padding: '6px',
+                                                                            fontSize: '10.5px',
+                                                                            fontWeight: '800',
+                                                                            textTransform: 'uppercase',
+                                                                            letterSpacing: '0.5px',
+                                                                            background: 'rgba(255,255,255,0.05)',
+                                                                            border: '1px solid rgba(255,255,255,0.1)',
+                                                                            color: 'var(--text-light)',
+                                                                            borderRadius: '8px',
+                                                                            cursor: 'pointer'
+                                                                        }}
+                                                                    >
+                                                                        Load More Calls ({s.calls.length - visibleCount} more)
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })() : (
+                                                        <div style={{ marginTop: '12px', fontSize: '11.5px', color: 'var(--text-dim)' }}>
+                                                            No calls recorded
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        })}
 
                         {/* Show More Button */}
                         {hasMore && (
@@ -1408,6 +1690,14 @@ export default function Dashboard() {
                                                     <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' }}>Rate: <span style={{ color: 'var(--lime)', fontWeight: 'bold' }}>${parseFloat(app.price).toFixed(2)}</span></div>
                                                 </div>
                                             </div>
+                                            {isCallActive(app) && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleStartCall(app); }}
+                                                    style={{ marginTop: '16px', width: '100%', padding: '10px', fontSize: '12.5px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', background: '#10b981', color: '#fff', border: 'none', borderRadius: '10px', cursor: 'pointer' }}
+                                                >
+                                                    Start Call
+                                                </button>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -1454,6 +1744,13 @@ export default function Dashboard() {
 
     return (
         <div className="screen dash-screen">
+            {/* Incoming Call Listener - Runs in background */}
+            <IncomingCallListener
+                trainerId={trainer?.id || localStorage.getItem('trainer_id')}
+                supabaseUrl={import.meta.env.VITE_SUPABASE_URL}
+                supabaseKey={import.meta.env.VITE_SUPABASE_ANON_KEY}
+            />
+
             {/* Sidebar Navigation */}
             <nav className="side-nav">
                 <div className="side-nav-logo" style={{ marginBottom: 40, color: 'var(--lime)', fontWeight: 'bold' }}>

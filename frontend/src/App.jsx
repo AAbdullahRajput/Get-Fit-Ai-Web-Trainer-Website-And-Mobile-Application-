@@ -9,6 +9,8 @@ import Slots from './screens/Slots'
 import SsoCallback from './screens/SsoCallback'
 import PrivacyPolicy from './screens/PrivacyPolicy'
 import TermsConditions from './screens/TermsConditions'
+import VideoCallPage from './screens/VideoCallPage'
+import OutgoingCallPage from './screens/OutgoingCallPage'
 
 export default function App() {
   return (
@@ -24,6 +26,8 @@ export default function App() {
             <Route path="/verify" element={<OtpVerification />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/slots" element={<Slots />} />
+            <Route path="/video-call/:callId" element={<VideoCallPage />} /> 
+            <Route path="/outgoing-call/:callId" element={<OutgoingCallPage />} />  
             <Route path="/sso-callback" element={<SsoCallback />} />
             <Route path="/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/terms-conditions" element={<TermsConditions />} />

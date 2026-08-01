@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/theme.dart';
 import 'core/constants.dart';
 import 'screens/launch_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables (AGORA_APP_ID, etc.)
+  await dotenv.load(fileName: '.env');
 
   // Initialize Supabase Connection
   await Supabase.initialize(
