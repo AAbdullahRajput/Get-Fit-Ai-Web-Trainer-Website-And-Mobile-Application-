@@ -148,11 +148,31 @@ class SupabaseService {
     required String email,
     required String password,
   }) async {
+    // --- DEBUG: network diagnostic ---
+    debugPrint('\x1B[36m[DEBUG] signInTrainer called | email: $email\x1B[0m');
+    try {
+      final host = Uri.parse(AppConstants.supabaseUrl).host;
+      final sw = Stopwatch()..start();
+      final result = await InternetAddress.lookup(host).timeout(const Duration(seconds: 5));
+      debugPrint('\x1B[32m[DEBUG] DNS OK for $host (${sw.elapsedMilliseconds}ms) -> ${result.map((a) => a.address).join(", ")}\x1B[0m');
+    } catch (e) {
+      debugPrint('\x1B[31m[DEBUG] DNS FAILED for supabase host: $e\x1B[0m');
+    }
+    try {
+      final generalCheck = await InternetAddress.lookup('google.com').timeout(const Duration(seconds: 5));
+      debugPrint('\x1B[32m[DEBUG] General internet OK -> ${generalCheck.map((a) => a.address).join(", ")}\x1B[0m');
+    } catch (e) {
+      debugPrint('\x1B[31m[DEBUG] NO INTERNET AT ALL (google.com failed): $e\x1B[0m');
+    }
+    // --- END DEBUG ---
+
+    debugPrint('\x1B[33m[API] POST /auth/v1/token?grant_type=password | email: $email\x1B[0m');
     // 1. Sign in with Supabase Auth
     final AuthResponse authData = await client.auth.signInWithPassword(
       email: email,
       password: password,
     );
+    debugPrint('\x1B[32m[API] 200 OK | signInWithPassword succeeded\x1B[0m');
 
     final user = authData.user;
     if (user == null) {
