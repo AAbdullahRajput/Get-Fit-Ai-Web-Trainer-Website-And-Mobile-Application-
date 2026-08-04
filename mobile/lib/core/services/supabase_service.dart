@@ -164,6 +164,29 @@ class SupabaseService {
     } catch (e) {
       debugPrint('\x1B[31m[DEBUG] NO INTERNET AT ALL (google.com failed): $e\x1B[0m');
     }
+    try {
+      final supabaseGeneric = await InternetAddress.lookup('supabase.co').timeout(const Duration(seconds: 5));
+      debugPrint('\x1B[32m[DEBUG] supabase.co (root domain) OK -> ${supabaseGeneric.map((a) => a.address).join(", ")}\x1B[0m');
+    } catch (e) {
+      debugPrint('\x1B[31m[DEBUG] supabase.co (root domain) FAILED: $e\x1B[0m');
+    }
+    try {
+      final socket = await Socket.connect('1.1.1.1', 443, timeout: const Duration(seconds: 5));
+      debugPrint('\x1B[32m[DEBUG] Raw TCP to 1.1.1.1:443 OK\x1B[0m');
+      socket.destroy();
+    } catch (e) {
+      debugPrint('\x1B[31m[DEBUG] Raw TCP to 1.1.1.1:443 FAILED: $e\x1B[0m');
+    }
+    // One more test: resolve via Google's DNS-over-HTTPS API directly (bypasses device resolver entirely)
+    try {
+      final dohResponse = await HttpClient().getUrl(Uri.parse(
+        'https://dns.google/resolve?name=rxtapixbzfurkhotot.supabase.co&type=A',
+      )).then((req) => req.close());
+      final body = await dohResponse.transform(utf8.decoder).join();
+      debugPrint('\x1B[32m[DEBUG] Google DoH result: $body\x1B[0m');
+    } catch (e) {
+      debugPrint('\x1B[31m[DEBUG] Google DoH FAILED: $e\x1B[0m');
+    }
     // --- END DEBUG ---
 
     debugPrint('\x1B[33m[API] POST /auth/v1/token?grant_type=password | email: $email\x1B[0m');
