@@ -9,6 +9,7 @@ import '../data/models/trainer.dart';
 import '../data/models/slot.dart';
 import '../data/models/client.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../core/services/notification_service.dart';
 import '../core/services/call_service.dart';
 import 'call/incoming_call_page.dart';
@@ -43,6 +44,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _notificationService.init();
     _loadTrainerData();
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+      if (_trainer != null) {
+        _supabaseService.registerFcmToken(_trainer!.id);
+      }
+    });
   }
 
   Future<void> _loadTrainerData() async {
@@ -60,6 +66,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _isLoadingTrainer = false;
         });
         _initRealtimeNotifications();
+        _supabaseService.registerFcmToken(_trainer!.id);
       }
 
       // Refresh trainer profile from Supabase
@@ -73,6 +80,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         });
         await prefs.setString('trainer', jsonEncode(refreshed.toJson()));
         _initRealtimeNotifications();
+        _supabaseService.registerFcmToken(refreshed.id);
       }
     } catch (e) {
       debugPrint('Error loading trainer data: $e');

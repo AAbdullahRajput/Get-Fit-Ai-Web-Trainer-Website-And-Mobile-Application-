@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../data/models/trainer.dart';
 import '../../data/models/slot.dart';
 import '../../data/models/client.dart';
@@ -715,6 +716,39 @@ class SupabaseService {
     } catch (e) {
       debugPrint('\x1B[31m[API] ERROR | getCallSessionsForAppointment | $e\x1B[0m');
       return [];
+    }
+  }
+
+  // -----------------------------------------
+  // Push Notification Token Registration
+  // -----------------------------------------
+
+  /// Requests notification permission, fetches the device's FCM token, and
+  /// upserts it into device_tokens so the server knows where to push
+  /// "incoming call" notifications for this trainer.
+  Future<void> registerFcmToken(String trainerId) async {
+    try {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      debugPrint('[FCM] Permission status: ${settings.authorizationStatus}');
+
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token == null) {
+        debugPrint('[FCM] No token returned — skipping registration');
+        return;
+      }
+
+      await dbClient.from('device_tokens').upsert({
+        'trainer_id': trainerId,
+        'fcm_token': token,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+      debugPrint('[FCM] Token registered for trainer: $trainerId');
+    } catch (e) {
+      debugPrint('[FCM] ERROR | registerFcmToken | $e');
     }
   }
 }

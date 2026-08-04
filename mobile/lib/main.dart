@@ -2,15 +2,53 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'core/theme.dart';
 import 'core/constants.dart';
+import 'core/services/call_notification_service.dart';
+import 'core/services/call_service.dart';
 import 'screens/launch_screen.dart';
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  debugPrint('[FCM] Background message received: ${message.data}');
+  await _handleIncomingCallMessage(message);
+}
+
+Future<void> _handleIncomingCallMessage(RemoteMessage message) async {
+  if (message.data['type'] != 'incoming_call') return;
+
+  final callId = message.data['call_id'] as String?;
+  final channelName = message.data['channel_name'] as String?;
+  final callerName = message.data['caller_name'] as String? ?? 'Someone';
+  if (callId == null || channelName == null) return;
+
+  CallNotificationService.setDeclineCallback((id) {
+    CallService().updateStatus(id, 'declined');
+  });
+
+  await CallNotificationService().showIncomingCall(
+    callId: callId,
+    channelName: channelName,
+    callerName: callerName,
+  );
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
  // Load environment variables (AGORA_APP_ID, etc.)
   await dotenv.load(fileName: '.env');
+
+  await Firebase.initializeApp();
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+  FirebaseMessaging.onMessage.listen((message) {
+    _handleIncomingCallMessage(message);
+  });
 
   debugPrint('\x1B[35m[BOOT] SUPABASE_URL="${AppConstants.supabaseUrl}"\x1B[0m');
   debugPrint('\x1B[35m[BOOT] SUPABASE_KEY length=${AppConstants.supabaseKey.length}\x1B[0m');
@@ -31,6 +69,7 @@ class GetFitApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'GetFit Trainer',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
