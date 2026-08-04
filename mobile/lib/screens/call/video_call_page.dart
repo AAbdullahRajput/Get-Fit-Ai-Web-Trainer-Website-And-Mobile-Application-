@@ -5,6 +5,7 @@ import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:mobile/core/services/agora_service.dart';
 import 'package:mobile/core/services/call_service.dart';
 import 'package:mobile/core/call/call_widgets.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:mobile/core/theme.dart';
 
 class VideoCallPage extends StatefulWidget {
@@ -154,6 +155,7 @@ class _VideoCallPageState extends State<VideoCallPage> {
     _tickTimer?.cancel();
     await _callService.endCall(widget.callId, connectedAt: _connectedAt);
     await _agoraService.leaveChannel();
+    await FlutterCallkitIncoming.endCall(widget.callId);
     if (mounted) Navigator.pop(context);
   }
 

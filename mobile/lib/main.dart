@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'core/theme.dart';
 import 'core/constants.dart';
 import 'core/services/call_notification_service.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'core/services/call_service.dart';
 import 'screens/launch_screen.dart';
 
@@ -24,6 +25,7 @@ Future<void> _handleIncomingCallMessage(RemoteMessage message) async {
   final callId = message.data['call_id'] as String?;
   final channelName = message.data['channel_name'] as String?;
   final callerName = message.data['caller_name'] as String? ?? 'Someone';
+  final callerImageUrl = message.data['caller_image_url'] as String?;
   if (callId == null || channelName == null) return;
 
   CallNotificationService.setDeclineCallback((id) {
@@ -34,6 +36,7 @@ Future<void> _handleIncomingCallMessage(RemoteMessage message) async {
     callId: callId,
     channelName: channelName,
     callerName: callerName,
+    callerImageUrl: (callerImageUrl != null && callerImageUrl.isNotEmpty) ? callerImageUrl : null,
   );
 }
 
@@ -49,6 +52,20 @@ void main() async {
   FirebaseMessaging.onMessage.listen((message) {
     _handleIncomingCallMessage(message);
   });
+
+  // Listen for CallKit accept/decline events while the app is alive.
+  FlutterCallkitIncoming.onEvent.listen((event) {
+    CallNotificationService.handleCallEvent(event);
+  });
+
+  // Handle the case where the app was fully killed and launched by tapping
+  // Accept on the CallKit screen.
+  final activeCalls = await FlutterCallkitIncoming.activeCalls();
+  if (activeCalls is List && activeCalls.isNotEmpty) {
+    // No-op here — the onEvent stream above still fires actionCallAccept
+    // on cold start in this plugin, so nothing extra is needed. This block
+    // is a hook in case you need to inspect activeCalls later.
+  }
 
   debugPrint('\x1B[35m[BOOT] SUPABASE_URL="${AppConstants.supabaseUrl}"\x1B[0m');
   debugPrint('\x1B[35m[BOOT] SUPABASE_KEY length=${AppConstants.supabaseKey.length}\x1B[0m');

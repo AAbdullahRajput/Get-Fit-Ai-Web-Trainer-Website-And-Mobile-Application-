@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:flutter_callkit_incoming/entities/entities.dart';
 import '../../screens/call/incoming_call_page.dart';
+import '../../screens/call/video_call_page.dart';
 import '../../main.dart' show navigatorKey;
+import 'call_service.dart';
 
 /// Shows a full-screen, high-priority "incoming call" notification with
 /// Accept/Decline actions — this is what fires when a call arrives while
@@ -21,54 +24,19 @@ class CallNotificationService {
   static const String _channelDesc = 'Full-screen alerts for incoming trainer calls';
   static const int _notificationId = 9911;
 
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
 
   Future<void> init() async {
     if (_isInitialized) return;
-
-    const AndroidInitializationSettings androidSettings =
-        AndroidInitializationSettings('@mipmap/launcher_icon');
-    const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
-    const InitializationSettings settings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
-
-    try {
-      await _plugin.initialize(
-        settings,
-        onDidReceiveNotificationResponse: _onNotificationResponse,
-        onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
-      );
-
-      const AndroidNotificationChannel channel = AndroidNotificationChannel(
-        _channelId,
-        _channelName,
-        description: _channelDesc,
-        importance: Importance.max,
-        playSound: true,
-        enableVibration: true,
-      );
-
-      final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
-          _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-      if (androidPlugin != null) {
-        await androidPlugin.createNotificationChannel(channel);
-      }
-
-      _isInitialized = true;
-      debugPrint('[CallNotificationService] Initialized');
-    } catch (e) {
-      debugPrint('[CallNotificationService] Init error: $e');
-    }
+    // CallKit needs no separate init call on Android — showCallkitIncoming
+    // creates its own channel/PhoneAccount on first use.
+    _isInitialized = true;
+    debugPrint('[CallNotificationService] Initialized');
   }
 
   /// Called from the FCM background handler and foreground onMessage listener.
+  /// Shows the native CallKit-style incoming call screen — this works even
+  /// when the app is fully killed, unlike a plain local notification.
   Future<void> showIncomingCall({
     required String callId,
     required String channelName,
@@ -77,102 +45,96 @@ class CallNotificationService {
   }) async {
     if (!_isInitialized) await init();
 
-    final payload = jsonEncode({
-      'call_id': callId,
-      'channel_name': channelName,
-      'caller_name': callerName,
-      'caller_image_url': callerImageUrl,
-    });
-
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDesc,
-      importance: Importance.max,
-      priority: Priority.high,
-      category: AndroidNotificationCategory.call,
-      fullScreenIntent: true,
-      ongoing: true,
-      autoCancel: false,
-      playSound: true,
-      enableVibration: true,
-      visibility: NotificationVisibility.public,
-      actions: const [
-        AndroidNotificationAction(
-          'accept_call',
-          'Accept',
-          showsUserInterface: true,
-          cancelNotification: true,
-        ),
-        AndroidNotificationAction(
-          'decline_call',
-          'Decline',
-          cancelNotification: true,
-        ),
-      ],
-    );
-
-    const darwinDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: true,
-      presentSound: true,
-      interruptionLevel: InterruptionLevel.timeSensitive,
-    );
-
-    final details = NotificationDetails(android: androidDetails, iOS: darwinDetails);
-
-    await _plugin.show(
-      _notificationId,
-      'Incoming call',
-      '$callerName is calling you',
-      details,
-      payload: payload,
-    );
-    debugPrint('[CallNotificationService] Shown incoming call notification for $callerName');
-  }
-
-  Future<void> cancelIncomingCall() async {
-    await _plugin.cancel(_notificationId);
-  }
-
-  static void _onNotificationResponse(NotificationResponse response) {
-    _handleResponse(response);
-  }
-
-  @pragma('vm:entry-point')
-  static void _onBackgroundNotificationResponse(NotificationResponse response) {
-    _handleResponse(response);
-  }
-
-  static void _handleResponse(NotificationResponse response) {
-    if (response.payload == null) return;
-    final data = jsonDecode(response.payload!) as Map<String, dynamic>;
-    final callId = data['call_id'] as String;
-    final channelName = data['channel_name'] as String;
-    final callerName = data['caller_name'] as String? ?? 'Someone';
-    final callerImageUrl = data['caller_image_url'] as String?;
-
-    debugPrint('[CallNotificationService] Action tapped: ${response.actionId ?? "notification body"}');
-
-    if (response.actionId == 'decline_call') {
-      // Decline path handled by IncomingCallPage normally requires the UI;
-      // for a pure background decline we do a lightweight status update
-      // via CallService, wired in main.dart's callback.
-      _declineCallback?.call(callId);
-      return;
-    }
-
-    // Accept, or a tap on the notification body — both open the call screen.
-    navigatorKey.currentState?.push(
-      MaterialPageRoute(
-        builder: (_) => IncomingCallPage(
-          callId: callId,
-          channelName: channelName,
-          callerName: callerName,
-          callerImageUrl: callerImageUrl,
-        ),
+    final params = CallKitParams(
+      id: callId,
+      nameCaller: callerName,
+      appName: 'GetFit',
+      avatar: callerImageUrl,
+      handle: callerName,
+      type: 1, // 1 = video call
+      duration: 45000,
+      textAccept: 'Accept',
+      textDecline: 'Decline',
+      missedCallNotification: NotificationParams(
+        showNotification: true,
+        isShowCallback: true,
+        subtitle: 'Missed call from $callerName',
+        callbackText: 'Call Back',
+      ),
+      extra: <String, dynamic>{
+        'call_id': callId,
+        'channel_name': channelName,
+        'caller_name': callerName,
+        'caller_image_url': callerImageUrl,
+      },
+      android: const AndroidParams(
+        isCustomNotification: true,
+        isShowLogo: false,
+        ringtonePath: 'system_ringtone_default',
+        backgroundColor: '#000000',
+        actionColor: '#D2F556',
+        incomingCallNotificationChannelName: 'Incoming Calls',
+        missedCallNotificationChannelName: 'Missed Calls',
       ),
     );
+
+    await FlutterCallkitIncoming.showCallkitIncoming(params);
+    debugPrint('[CallNotificationService] Shown CallKit incoming call for $callerName');
+  }
+
+  Future<void> cancelIncomingCall(String callId) async {
+    await FlutterCallkitIncoming.endCall(callId);
+  }
+
+  /// Handles CallKit accept/decline events. Call this once from main.dart's
+  /// FlutterCallkitIncoming.onEvent.listen(...).
+  static void handleCallEvent(CallEvent? event) {
+    if (event == null) return;
+    final body = event.body as Map<Object?, Object?>?;
+    final extra = body?['extra'] as Map<Object?, Object?>?;
+    if (extra == null) return;
+
+    final callId = extra['call_id'] as String?;
+    final channelName = extra['channel_name'] as String?;
+    final callerName = extra['caller_name'] as String? ?? 'Someone';
+    if (callId == null || channelName == null) return;
+
+    debugPrint('[CallNotificationService] CallKit event: ${event.event}');
+
+    switch (event.event) {
+      case Event.actionCallAccept:
+        // CallKit's own Accept button IS the accept decision — go straight
+        // into the call instead of showing a second Accept/Decline screen.
+        CallService().updateStatus(callId, 'accepted').then((_) {
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(
+              builder: (_) => VideoCallPage(
+                callId: callId,
+                channelName: channelName,
+                remoteName: callerName,
+              ),
+            ),
+          );
+        });
+        break;
+      case Event.actionCallDecline:
+        _declineCallback?.call(callId);
+        FlutterCallkitIncoming.endCall(callId);
+        break;
+      case Event.actionCallEnded:
+        // Caller cancelled/hung up while still ringing, or the call ended
+        // normally — clear any lingering call UI/banner.
+        FlutterCallkitIncoming.endCall(callId);
+        break;
+      case Event.actionCallTimeout:
+        // Don't call endCall here — the plugin already shows its own
+        // missed-call notification the moment duration expires, and
+        // calling endCall right after can dismiss that notification.
+        debugPrint('[CallNotificationService] Call timed out — missed call notification shown by plugin');
+        break;
+      default:
+        break;
+    }
   }
 
   /// Set from main.dart so a background "Decline" tap can update call_sessions

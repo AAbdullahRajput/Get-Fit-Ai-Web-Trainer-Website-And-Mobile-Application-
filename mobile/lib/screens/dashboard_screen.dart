@@ -198,7 +198,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     debugPrint('[CALL] Skipping incoming — trainer initiated this call');
     return;
   }
-  _handleIncomingCall(call);
+  // Incoming call UI is now handled entirely by CallKit via FCM (works even
+  // when app is backgrounded/killed). Don't also navigate here — that
+  // caused a duplicate call screen and a second Agora join from this
+  // same device ("calling itself").
+  debugPrint('[CALL] Realtime insert observed (status=${call['status']}) — UI handled by CallKit.');
 });
 
     // Subscribe to all insertions on the trainer_appointments table
