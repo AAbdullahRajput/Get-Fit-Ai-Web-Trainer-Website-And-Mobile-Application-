@@ -5,8 +5,10 @@ class BookedSlot {
   final String endTime;
   final double price;
   final String status;
+  final String? userId;
   final String? userName;
   final String? userEmail;
+  final String? avatarUrl;
 
   BookedSlot({
     required this.id,
@@ -15,11 +17,14 @@ class BookedSlot {
     required this.endTime,
     required this.price,
     required this.status,
+    this.userId,
     this.userName,
     this.userEmail,
+    this.avatarUrl,
   });
 
   factory BookedSlot.fromJson(Map<String, dynamic> json) {
+    final userJoin = json['users'] as Map<String, dynamic>?;
     return BookedSlot(
       id: json['id'].toString(),
       slotDate: (json['slot_date'] ?? json['appointment_date']) as String,
@@ -27,8 +32,10 @@ class BookedSlot {
       endTime: json['end_time'] as String,
       price: double.tryParse(json['price'].toString()) ?? 48.00,
       status: json['status'] as String? ?? 'confirmed',
-      userName: json['user_name'] as String?,
-      userEmail: json['user_email'] as String?,
+      userId: json['user_id'] as String?,
+      userName: json['user_name'] as String? ?? userJoin?['username'] as String?,
+      userEmail: json['user_email'] as String? ?? userJoin?['email'] as String?,
+      avatarUrl: userJoin?['avatar_url'] as String?,
     );
   }
 }

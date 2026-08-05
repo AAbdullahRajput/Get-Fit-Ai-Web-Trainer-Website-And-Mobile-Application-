@@ -745,7 +745,7 @@ class SupabaseService {
         'trainer_id': trainerId,
         'fcm_token': token,
         'updated_at': DateTime.now().toIso8601String(),
-      });
+      }, onConflict: 'trainer_id');
       debugPrint('[FCM] Token registered for trainer: $trainerId');
     } catch (e) {
       debugPrint('[FCM] ERROR | registerFcmToken | $e');

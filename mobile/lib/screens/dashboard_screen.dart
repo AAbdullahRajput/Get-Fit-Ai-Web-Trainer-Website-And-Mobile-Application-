@@ -1368,7 +1368,7 @@ class _BookingsTab extends StatefulWidget {
 class _BookingsTabState extends State<_BookingsTab> {
   final SupabaseService _supabaseService = SupabaseService();
   final _callService = CallService();
-  List<TrainerSlot> _bookedSlots = [];
+  List<BookedSlot> _bookedSlots = [];
   bool _isLoading = true;
 
   @override
@@ -1380,16 +1380,42 @@ class _BookingsTabState extends State<_BookingsTab> {
   Future<void> _fetchBookings() async {
     try {
       final List<dynamic> rows = await _supabaseService.client
-          .from('trainer_slots')
+          .from('trainer_appointments')
           .select('*')
           .eq('trainer_id', widget.trainerId)
-          .eq('status', 'booked')
-          .order('slot_date', ascending: true)
+          .eq('status', 'confirmed')
+          .order('appointment_date', ascending: true)
           .order('start_time', ascending: true);
 
-      final List<TrainerSlot> slots = rows
-          .map((e) => TrainerSlot.fromJson(e as Map<String, dynamic>))
+      // No FK relationship exists between trainer_appointments.user_id and
+      // users.id in Supabase's schema, so the embedded join syntax
+      // (select users(...)) doesn't work — fetch avatars separately instead,
+      // same pattern as SupabaseService.getClients().
+      final List<String> userIds = rows
+          .map((r) => r['user_id']?.toString() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet()
           .toList();
+
+      final Map<String, Map<String, dynamic>> usersMap = {};
+      if (userIds.isNotEmpty) {
+        final List<dynamic> usersRows = await _supabaseService.client
+            .from('users')
+            .select('id, username, email, avatar_url')
+            .inFilter('id', userIds);
+        for (final u in usersRows) {
+          usersMap[u['id'].toString()] = u as Map<String, dynamic>;
+        }
+      }
+
+      final List<BookedSlot> slots = rows.map((e) {
+        final row = Map<String, dynamic>.from(e as Map<String, dynamic>);
+        final uid = row['user_id']?.toString();
+        if (uid != null && usersMap.containsKey(uid)) {
+          row['users'] = usersMap[uid];
+        }
+        return BookedSlot.fromJson(row);
+      }).toList();
 
       // Keep only slots that haven't started yet — ongoing/live sessions now
       // show separately on the Home tab.
@@ -1506,39 +1532,16 @@ class _BookingsTabState extends State<_BookingsTab> {
                     children: [
                       Row(
                         children: [
-                      // Date circle indicator
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: isLight ? AppColors.limeDim.withOpacity(0.1) : AppColors.lime.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isLight ? AppColors.limeDim.withOpacity(0.3) : AppColors.lime.withOpacity(0.2),
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              slot.slotDate.split('-')[2], // Day
-                              style: TextStyle(
-                                color: isLight ? AppColors.limeDim : AppColors.lime,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: 'Archivo Black',
-                              ),
-                            ),
-                            Text(
-                              _getMonthAbbreviation(slot.slotDate),
-                              style: TextStyle(
-                                color: isLight ? Colors.black87 : AppColors.textLight,
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
+                      // Client avatar
+                      CircleAvatar(
+                        radius: 26,
+                        backgroundColor: isLight ? Colors.black.withOpacity(0.05) : Colors.white10,
+                        backgroundImage: (slot.avatarUrl != null && slot.avatarUrl!.isNotEmpty)
+                            ? NetworkImage(slot.avatarUrl!)
+                            : null,
+                        child: (slot.avatarUrl == null || slot.avatarUrl!.isEmpty)
+                            ? Icon(Icons.person, color: isLight ? Colors.black54 : AppColors.textDim)
+                            : null,
                       ),
                       const SizedBox(width: 16),
                       // Appointment details
@@ -1547,7 +1550,7 @@ class _BookingsTabState extends State<_BookingsTab> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              slot.bookedByName ?? 'Client',
+                              slot.userName ?? 'Client',
                               style: TextStyle(
                                 color: labelColor,
                                 fontWeight: FontWeight.bold,
@@ -1556,7 +1559,7 @@ class _BookingsTabState extends State<_BookingsTab> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              slot.bookedByEmail ?? '',
+                              '${slot.slotDate} • ${slot.userEmail ?? ''}',
                               style: TextStyle(
                                 color: subLabelColor,
                                 fontSize: 11,
@@ -1622,7 +1625,7 @@ class _BookingsTabState extends State<_BookingsTab> {
     );
   }
 
-  void _showBookingSummary(BuildContext context, TrainerSlot slot, bool isLight, Color labelColor, Color subLabelColor, Color cardBgColor, Color borderColor) {
+  void _showBookingSummary(BuildContext context, BookedSlot slot, bool isLight, Color labelColor, Color subLabelColor, Color cardBgColor, Color borderColor) {
     showModalBottomSheet(
       context: context,
       backgroundColor: cardBgColor,
@@ -1650,8 +1653,8 @@ class _BookingsTabState extends State<_BookingsTab> {
                 Divider(color: borderColor, height: 24),
                 Text('CLIENT', style: TextStyle(color: subLabelColor, fontSize: 11, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
-                Text(slot.bookedByName ?? 'Client', style: TextStyle(color: labelColor, fontWeight: FontWeight.bold, fontSize: 14)),
-                Text(slot.bookedByEmail ?? '', style: TextStyle(color: subLabelColor, fontSize: 12)),
+                Text(slot.userName ?? 'Client', style: TextStyle(color: labelColor, fontWeight: FontWeight.bold, fontSize: 14)),
+                Text(slot.userEmail ?? '', style: TextStyle(color: subLabelColor, fontSize: 12)),
                 const SizedBox(height: 20),
                 Text('DATE & TIME', style: TextStyle(color: subLabelColor, fontSize: 11, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
@@ -1682,26 +1685,13 @@ class _BookingsTabState extends State<_BookingsTab> {
     );
   }
 
-  Future<void> _callClient(TrainerSlot slot) async {
-    final String? userId = slot.bookedByUserId;
+  Future<void> _callClient(BookedSlot slot) async {
+    final String? userId = slot.userId;
     if (userId == null || userId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not find this client\'s user ID to call.')),
       );
       return;
-    }
-
-    // TrainerSlot doesn't carry an avatar, so fetch it from users table.
-    String? clientImageUrl;
-    try {
-      final userRow = await _supabaseService.client
-          .from('users')
-          .select('avatar_url')
-          .eq('id', userId)
-          .maybeSingle();
-      clientImageUrl = userRow?['avatar_url'] as String?;
-    } catch (e) {
-      debugPrint('Error fetching client avatar: $e');
     }
 
     final result = await _callService.startCall(
@@ -1724,8 +1714,8 @@ class _BookingsTabState extends State<_BookingsTab> {
         builder: (_) => OutgoingCallPage(
           callId: result['id'] as String,
           channelName: result['channel_name'] as String,
-          trainerName: slot.bookedByName ?? 'Client',
-          trainerImageUrl: clientImageUrl,
+          trainerName: slot.userName ?? 'Client',
+          trainerImageUrl: slot.avatarUrl,
         ),
       ),
     );

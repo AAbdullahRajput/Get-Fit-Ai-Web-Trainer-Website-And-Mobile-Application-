@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../screens/call/incoming_call_page.dart';
 import '../../screens/call/video_call_page.dart';
 import '../../main.dart' show navigatorKey;
@@ -25,6 +26,42 @@ class CallNotificationService {
   static const int _notificationId = 9911;
 
   bool _isInitialized = false;
+
+  // Watches call_sessions for a specific ringing call, independent of
+  // whether any UI page is open, so CallKit auto-dismisses the instant the
+  // other side hangs up/declines/times out — not just when our own page
+  // happens to be listening.
+  static final Map<String, RealtimeChannel> _dismissWatchers = {};
+
+  static void _watchForRemoteEnd(String callId) {
+    final client = Supabase.instance.client;
+    final channel = client.channel('callkit_dismiss_$callId');
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.update,
+      schema: 'public',
+      table: 'call_sessions',
+      filter: PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'id',
+        value: callId,
+      ),
+      callback: (payload) {
+        final status = payload.newRecord['status'] as String?;
+        debugPrint('[CallNotificationService] Remote watcher | status=$status');
+        if (status == 'ended' || status == 'missed' || status == 'declined') {
+          FlutterCallkitIncoming.endCall(callId);
+          _stopWatching(callId);
+        }
+      },
+    );
+    channel.subscribe();
+    _dismissWatchers[callId] = channel;
+  }
+
+  static void _stopWatching(String callId) {
+    _dismissWatchers[callId]?.unsubscribe();
+    _dismissWatchers.remove(callId);
+  }
 
   Future<void> init() async {
     if (_isInitialized) return;
@@ -80,6 +117,7 @@ class CallNotificationService {
 
     await FlutterCallkitIncoming.showCallkitIncoming(params);
     debugPrint('[CallNotificationService] Shown CallKit incoming call for $callerName');
+    _watchForRemoteEnd(callId);
   }
 
   Future<void> cancelIncomingCall(String callId) async {
@@ -105,6 +143,7 @@ class CallNotificationService {
       case Event.actionCallAccept:
         // CallKit's own Accept button IS the accept decision — go straight
         // into the call instead of showing a second Accept/Decline screen.
+        _stopWatching(callId);
         CallService().updateStatus(callId, 'accepted').then((_) {
           navigatorKey.currentState?.push(
             MaterialPageRoute(
@@ -118,15 +157,18 @@ class CallNotificationService {
         });
         break;
       case Event.actionCallDecline:
+        _stopWatching(callId);
         _declineCallback?.call(callId);
         FlutterCallkitIncoming.endCall(callId);
         break;
       case Event.actionCallEnded:
         // Caller cancelled/hung up while still ringing, or the call ended
         // normally — clear any lingering call UI/banner.
+        _stopWatching(callId);
         FlutterCallkitIncoming.endCall(callId);
         break;
       case Event.actionCallTimeout:
+        _stopWatching(callId);
         // Don't call endCall here — the plugin already shows its own
         // missed-call notification the moment duration expires, and
         // calling endCall right after can dismiss that notification.

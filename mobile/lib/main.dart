@@ -7,11 +7,18 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'core/theme.dart';
 import 'core/constants.dart';
 import 'core/services/call_notification_service.dart';
+import 'core/services/appointment_notification_service.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'core/services/call_service.dart';
+import 'screens/call/incoming_call_page.dart';
 import 'screens/launch_screen.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+Future<void> _handleAppointmentReminderMessage(RemoteMessage message) async {
+  if (message.data['type'] != 'appointment_reminder') return;
+  debugPrint('[APPT] Reminder received: ${message.data['body']}');
+}
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -49,8 +56,52 @@ void main() async {
   await Firebase.initializeApp();
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  FirebaseMessaging.onMessage.listen((message) {
-    _handleIncomingCallMessage(message);
+  FirebaseMessaging.onMessage.listen((message) async {
+    debugPrint('\x1B[33m[FCM] Foreground message: ${message.data}\x1B[0m');
+    debugPrint('\x1B[33m[FCM] Notification: ${message.notification?.title} | ${message.notification?.body}\x1B[0m');
+    
+    await _handleIncomingCallMessage(message);
+    await _handleAppointmentReminderMessage(message);
+
+    // Show appointment reminder banner
+    if (message.data['type'] == 'appointment_reminder') {
+      try {
+        final navigator = navigatorKey.currentState;
+        if (navigator != null) {
+          // Use the proper Scaffold context
+          final context = navigatorKey.currentContext;
+          if (context != null && Scaffold.maybeOf(context) != null) {
+            AppointmentNotificationService.showAppointmentReminder(
+              context: context,
+              title: message.data['title'] ?? 'Appointment Reminder',
+              body: message.data['body'] ?? 'Upcoming session',
+              timeframe: message.data['notification_type'] ?? 'appointment',
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('[APPT] Error showing reminder: $e');
+      }
+    }
+
+    if (message.data['type'] != 'incoming_call') return;
+    final callId = message.data['call_id'] as String?;
+    final channelName = message.data['channel_name'] as String?;
+    final callerName = message.data['caller_name'] as String? ?? 'Someone';
+    final callerImageUrl = message.data['caller_image_url'] as String?;
+    if (callId == null || channelName == null) return;
+
+    navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) => IncomingCallPage(
+          callId: callId,
+          channelName: channelName,
+          callerName: callerName,
+          callerImageUrl: (callerImageUrl != null && callerImageUrl.isNotEmpty) ? callerImageUrl : null,
+          playRingtone: false,
+        ),
+      ),
+    );
   });
 
   // Listen for CallKit accept/decline events while the app is alive.

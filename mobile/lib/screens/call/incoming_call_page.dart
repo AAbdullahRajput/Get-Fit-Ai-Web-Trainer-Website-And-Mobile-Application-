@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:mobile/core/services/call_service.dart';
 import 'package:mobile/core/services/agora_service.dart';
 import 'package:mobile/core/services/beep_service.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'video_call_page.dart';
 import 'package:mobile/core/call/call_widgets.dart';
 import 'package:mobile/core/theme.dart';
@@ -12,6 +13,7 @@ class IncomingCallPage extends StatefulWidget {
   final String channelName;
   final String callerName;
   final String? callerImageUrl;
+  final bool playRingtone;
 
   const IncomingCallPage({
     super.key,
@@ -19,6 +21,7 @@ class IncomingCallPage extends StatefulWidget {
     required this.channelName,
     required this.callerName,
     this.callerImageUrl,
+    this.playRingtone = true,
   });
 
   @override
@@ -70,7 +73,9 @@ class _IncomingCallPageState extends State<IncomingCallPage> {
     debugPrint('\x1B[35m[CALL] IncomingCallPage opened | id=${widget.callId}\x1B[0m');
     _callService.listenToCall(widget.callId);
     _callService.onSessionUpdate = _handleSessionUpdate;
-    _beepService.startRingtone();
+    if (widget.playRingtone) {
+      _beepService.startRingtone();
+    }
   }
 
  void _handleSessionUpdate(Map<String, dynamic> session) {
@@ -97,6 +102,7 @@ class _IncomingCallPageState extends State<IncomingCallPage> {
 
     try {
       await _callService.updateStatus(widget.callId, 'accepted');
+      await FlutterCallkitIncoming.endCall(widget.callId);
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -123,6 +129,7 @@ class _IncomingCallPageState extends State<IncomingCallPage> {
 
     try {
       await _callService.updateStatus(widget.callId, 'declined');
+      await FlutterCallkitIncoming.endCall(widget.callId);
       if (mounted) {
         Navigator.of(context).pop();
       }
