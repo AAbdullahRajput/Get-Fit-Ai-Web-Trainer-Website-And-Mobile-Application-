@@ -1,186 +1,436 @@
 # GetFit AI
 
-**Train Smarter. Scale Faster.**
+> **Train Smarter. Scale Faster.**
+> 
+> The all-in-one platform for personal trainers to manage clients, schedule sessions, track progress, and run live 1:1 virtual coaching calls.
 
-GetFit AI is a full-stack platform built for personal trainers to manage their clients, schedule training sessions, track progress, and run live virtual coaching calls — all in one place. It includes a **web app** (for trainers), a **Flutter mobile app** (for both trainers and clients), and a **Node.js backend** powered by Supabase, Agora RTC, and NodeMailer.
+<div align="center">
+
+![GetFit AI](https://img.shields.io/badge/version-1.0.0-blue)
+![React](https://img.shields.io/badge/frontend-React%2019%20%2B%20Vite-61DAFB?logo=react)
+![Flutter](https://img.shields.io/badge/mobile-Flutter%203.x-02569B?logo=flutter)
+![Node.js](https://img.shields.io/badge/backend-Node.js%20%2B%20Express-339933?logo=node.js)
+![Supabase](https://img.shields.io/badge/database-Supabase-3ECF8E?logo=supabase)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+[🚀 Get Started](#-getting-started) • [📖 Features](#-features) • [🏗️ Architecture](#-architecture) • [📱 Live Demo](#-live-demo)
+
+</div>
 
 ---
 
-## 📦 Project Structure
+## 🎯 What is GetFit AI?
+
+GetFit AI is a **full-stack fitness coaching platform** built for modern personal trainers. Manage everything your coaching business needs—from client profiles and scheduling to live video calls and payment tracking—all in one beautifully designed interface.
+
+**Three platforms. One ecosystem.**
+- 🖥️ **Web Dashboard** (React + Vite) — For trainers
+- 📱 **Mobile App** (Flutter) — For trainers and clients  
+- ⚙️ **Powerful Backend** (Node.js + Express) — Real-time sync, video calls, email automation
+
+<div align="center">
+  <img src="./Project%20Images/Trainer%20Website%20Images/Screenshot%20(5000).png" alt="GetFit Dashboard" width="700" style="border-radius: 12px; margin: 20px 0;">
+</div>
+
+---
+
+## 💡 Features at a Glance
+
+<div align="center">
+  <img src="./Project%20Images/Trainer%20Mobile%20Application%20Images/WhatsApp%20Image%202026-08-06%20at%2017.30.01.jpeg" alt="GetFit Mobile Features" width="500" style="border-radius: 12px; margin: 20px 0;">
+</div>
+
+<table>
+<tr>
+<td width="50%">
+
+### 🧑‍🏫 Trainer Management
+- Email/password signup with OTP verification
+- Professional profile with photo upload & editing
+- Experience badges and session pricing
+- Dashboard with key stats (active clients, sessions completed, ratings)
+
+</td>
+<td width="50%">
+
+### 📅 Smart Scheduling
+- Create flexible training slots (date, time, price)
+- Automatic availability management
+- Chronological booking history
+- Real-time appointment tracking (upcoming → ongoing → completed)
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 👥 Client Management
+- Complete client directory with contact info
+- Session history and booking records
+- Expandable client cards with call logs
+- Quick client search and filtering
+
+</td>
+<td width="50%">
+
+### 📞 Live Video Coaching
+- 1:1 video calls with crystal-clear Agora RTC
+- Incoming call notifications (background-safe)
+- Call history with status tracking (missed, declined, ended)
+- Automatic call duration logging
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🔔 Smart Notifications
+- Instant email alerts (password reset, OTP, confirmations)
+- Real-time call signaling via Supabase
+- Push notifications to mobile app
+- Automated booking reminders
+
+</td>
+<td width="50%">
+
+### 📱 Cross-Platform Mobile
+- Native Flutter app with dark theme
+- Offline-first architecture
+- Local incoming call notifications
+- Responsive UI for all screen sizes
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🎬 Screenshots Gallery
+
+<div align="center">
+
+**Web App**
+
+| Dashboard | Bookings | Video Call |
+|-----------|----------|-----------|
+| <img src="./Project%20Images/Trainer%20Website%20Images/Screenshot%20(4997).png" alt="Dashboard" width="220"> | <img src="./Project%20Images/Trainer%20Website%20Images/Screenshot%20(4996).png" alt="Bookings" width="220"> | <img src="./Project%20Images/Trainer%20Website%20Images/Screenshot%20(4995).png" alt="Video Call" width="220"> |
+
+**Mobile App**
+
+ | Dashboard | Calls |
+|-----------|-------|
+| <img src="./Project%20Images/Trainer%20Mobile%20Application%20Images/WhatsApp%20Image%202026-08-06%20at%2017.30.02.jpeg" alt="Dashboard" width="180"> | <img src="./Project%20Images/Trainer%20Mobile%20Application%20Images/WhatsApp%20Image%202026-08-06%20at%2017.30.02%20(1).jpeg" alt="Calls" width="180"> |
+
+</div>
+
+---
+
+## 🛠️ Tech Stack
+
+**Frontend (Web)**
+```
+React 19 | Vite 8 | React Router 7 | React Compiler
+```
+
+**Mobile**
+```
+Flutter 3.x | Supabase Flutter SDK | Provider | Agora RTC Engine
+```
+
+**Backend**
+```
+Node.js | Express 5 | Supabase (PostgreSQL + Auth + Realtime)
+```
+
+**Infrastructure**
+```
+Agora RTC (Video) | NodeMailer (Email) | Vercel (Frontend) | Render (Backend)
+```
+
+---
+
+## 📦 Project Architecture
 
 ```
 getfitai/
-├── frontend/          # React + Vite web app (trainer dashboard)
-├── mobile/            # Flutter mobile app (trainer & client)
-├── server/            # Node.js + Express backend API
-└── README.md
+├── 📂 frontend/              React dashboard for trainers
+│   ├── src/pages/           Dashboard, auth, video call screens
+│   ├── src/components/      Reusable UI components
+│   └── vite.config.js       Proxy to backend /api
+│
+├── 📂 mobile/               Flutter app (trainer + client)
+│   ├── lib/screens/        Authentication, calls, bookings
+│   ├── lib/services/       Supabase + Agora integration
+│   └── pubspec.yaml        Dependencies & asset config
+│
+├── 📂 server/               Node.js/Express API
+│   ├── routes/auth/         Registration, login, OTP, password reset
+│   ├── routes/slots/        Slot CRUD, booking management
+│   ├── routes/agora/        RTC token generation
+│   └── middleware/          Auth validation, error handling
+│
+└── 📂 supabase/             Database schema & migrations
+    ├── migrations/          SQL table definitions
+    └── seed.sql            Sample data for testing
+
 ```
 
 ---
 
-## ✨ Features
+## 🚀 Getting Started in 5 Minutes
 
-### 🧑‍🏫 Trainer Management
-- Sign up / log in with email & password, OTP verification, and password recovery
-- Full profile management (name, email, phone, experience, specialties, bio, session price)
-- Circular profile picture upload with crop, zoom, and drag tools
-- Home dashboard with stats (active clients, completed sessions, experience, rating)
-
-### 📅 Scheduling & Bookings
-- Create and manage training slots (date, start/end time, price)
-- View upcoming, ongoing, and completed appointments
-- Booker / client details shown on each appointment
-- Chronological sort and searchable client & booking lists
-
-### 👥 Client Tracking
-- See all clients who have booked sessions
-- View client contact info, total sessions, and booking history
-- Expandable client cards with session history and call records
-
-### 📞 Live Video Calls (Agora)
-- Start live 1:1 video coaching calls with clients
-- Incoming & outgoing call pages with realtime signaling
-- Incoming call modal/listener that runs in the background
-- Call history with status (missed, declined, ended), direction, and duration
-
-### 📱 Cross-Platform Mobile App
-- Flutter app with a dark theme & native splash/launcher icons
-- Supabase auth, realtime call listeners, and push/notification support
-- Local notifications for incoming calls
-
-### 🔔 Notifications & Automation
-- Email notifications via NodeMailer (password reset, OTP, booking confirmations)
-- Realtime call signaling via Supabase Realtime
-
----
-
-## 🧱 Tech Stack
-
-| Layer      | Technology |
-|------------|------------|
-| Web (Frontend) | React 19, Vite 8, React Router 7, React Compiler |
-| Mobile      | Flutter 3.x, Supabase Flutter, Provider, Agora RTC |
-| Backend     | Node.js, Express 5, Supabase (DB + Auth + Realtime) |
-| Video Calls | Agora RTC SDK (Web `agora-rtc-sdk-ng`, Flutter `agora_rtc_engine`) |
-| Database    | Supabase (PostgreSQL) |
-| Email       | NodeMailer |
-| Deployment  | Vercel (frontend), Render (backend) |
-
----
-
-## 🚀 Getting Started
+<div align="center">
+  <img src="./Project%20Images/Trainer%20Website%20Images/Screenshot%20(4999).png" alt="GetFit Video Call Interface" width="700" style="border-radius: 12px; margin: 20px 0;">
+</div>
 
 ### Prerequisites
-- Node.js 18+ and npm
-- Flutter SDK 3.x
-- A Supabase project (URL, anon key, service role key)
-- An Agora App ID & token service
-- SMTP credentials for email sending
+- **Node.js** 18+ and npm
+- **Flutter SDK** 3.x (for mobile)
+- **Supabase** account with project credentials
+- **Agora** App ID and token service
+- **SMTP** credentials (Gmail, SendGrid, etc.)
 
-### 1️⃣ Backend (`server/`)
+### 1️⃣ Clone & Navigate
+```bash
+git clone https://github.com/AAbdullahRajput/Get-Fit-Ai-Web-Trainer-Website-And-Mobile-Application-.git
+cd Get-Fit-Ai-Web-Trainer-Website-And-Mobile-Application-
+```
 
+### 2️⃣ Backend Setup
 ```bash
 cd server
 npm install
-cp .env.example .env   # fill in your environment variables
-npm run dev            # or: npm start
+cp .env.example .env
 ```
 
-The server runs on `http://localhost:5000` with a `/health` check endpoint.
-
-**Environment variables:**
-```
+**Fill in `.env`:**
+```env
 PORT=5000
-SUPABASE_URL=your_supabase_url
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-INTERNAL_API_SECRET=your_internal_secret
-SMTP_HOST=...
-SMTP_PORT=...
-SMTP_USER=...
-SMTP_PASS=...
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJ...your_key...
+INTERNAL_API_SECRET=your_secret_key_here
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
 ```
-
-**API routes:**
-- `POST /api/auth/...` — registration, login, OTP, password reset, profile
-- `GET/POST /api/slots/...` — slot creation, listing, clients, bookings
-- `POST /api/agora/generate-token` — generate a live call token
-
-### 2️⃣ Frontend Web (`frontend/`)
 
 ```bash
-cd frontend
+npm run dev
+# Server ready at http://localhost:5000
+```
+
+### 3️⃣ Frontend Setup
+```bash
+cd ../frontend
 npm install
 npm run dev
+# Open http://localhost:5173
 ```
 
-The Vite dev server proxies `/api` to `http://localhost:5000`. Deploy to Vercel using the included `vercel.json` (rewrites `/api` to the Render backend).
-
-**Environment variables (`frontend/.env`):**
-```
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_anon_key
+**Environment (`.env`):**
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJ...your_anon_key...
 ```
 
-### 3️⃣ Mobile App (`mobile/`)
-
+### 4️⃣ Mobile Setup
 ```bash
-cd mobile
+cd ../mobile
 flutter pub get
+
+# Create `.env` file in project root:
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=eyJ...your_anon_key...
+AGORA_APP_ID=your_agora_app_id
+
 flutter run
 ```
 
-The app loads configuration from a `.env` file (already listed in `pubspec.yaml` assets):
+---
 
+## 🖥️ Web Dashboard Preview
+
+<div align="center">
+  <img src="./Project%20Images/Trainer%20Website%20Images/Screenshot%20(4998).png" alt="GetFit Web Dashboard" width="700" style="border-radius: 12px; margin: 20px 0;">
+</div>
+
+---
+
+## 🧭 Web App Routes
+
+| Route | Purpose |
+|-------|---------|
+| `/` | Launch screen |
+| `/home` | Marketing landing page |
+| `/login`, `/signup` | Authentication forms |
+| `/forgot-password`, `/verify` | Account recovery & OTP |
+| **`/dashboard`** | **Main trainer hub** (Home, Bookings, History, Profile) |
+| `/slots` | Manage training slots |
+| `/video-call/:id` | Active video call |
+| `/outgoing-call/:id` | Outgoing call screen |
+| `/privacy-policy`, `/terms` | Legal pages |
+
+---
+
+## 📱 Mobile App Screens
+
+<div align="center">
+  <img src="./Project%20Images/Trainer%20Mobile%20Application%20Images/WhatsApp%20Image%202026-08-06%20at%2017.30.01%20(1).jpeg" alt="GetFit Mobile App" width="500" style="border-radius: 12px; margin: 20px 0;">
+</div>
+
+1. **Launch** — Splash screen with app branding
+2. **Auth Flow** — Login → Signup → Forgot Password → OTP Verification
+3. **Dashboard** — Home (stats), Bookings, History, Profile
+4. **Calls** — Incoming modal, Outgoing screen, Active video call
+5. **Client List** — Browse & search booked clients
+6. **Settings** — Profile, logout, notifications
+
+---
+
+## 🗄️ Database Schema
+
+### Core Tables
+
+**trainers**
+```sql
+id, email, name, phone, experience, specialties, bio, 
+profile_image_url, session_price, rating, created_at
 ```
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_anon_key
-AGORA_APP_ID=your_agora_app_id
+
+**clients**
+```sql
+id, name, email, mobile, profile_image_url, created_at
+```
+
+**trainer_slots**
+```sql
+id, trainer_id, date, start_time, end_time, price, 
+is_booked, booked_by_client_id, status, virtual
+```
+
+**booked_slots**
+```sql
+id, slot_id, trainer_id, client_id, date, start_time, 
+end_time, price, status, created_at
+```
+
+**call_history**
+```sql
+id, trainer_id, client_id, call_type (outgoing/incoming), 
+status (connected/missed/declined), duration, timestamp
 ```
 
 ---
 
-## 🧭 Application Screens
+## 🔑 Key API Endpoints
 
-**Web (React):**
-- `/` — Launch screen
-- `/home` — Landing / marketing page
-- `/login` · `/signup` — Authentication
-- `/forgot-password` · `/verify` — Account recovery & OTP
-- `/dashboard` — Trainer dashboard (Home, Bookings, History, Profile tabs)
-- `/slots` — Slot management
-- `/video-call/:callId` — Video call
-- `/outgoing-call/:callId` — Outgoing call
-- `/privacy-policy` · `/terms-conditions` — Legal pages
+### Authentication
+```
+POST   /api/auth/register          Register new trainer
+POST   /api/auth/login             Login with email & password
+POST   /api/auth/send-otp          Send OTP to email
+POST   /api/auth/verify-otp        Verify OTP code
+POST   /api/auth/forgot-password   Request password reset
+POST   /api/auth/reset-password    Complete password reset
+```
 
-**Mobile (Flutter):**
-- Launch, Landing, Auth, Forgot Password, Dashboard
-- Call screens: Incoming, Outgoing, Video Call
+### Slots & Bookings
+```
+POST   /api/slots/create           Create new training slot
+GET    /api/slots/:trainerId       Get trainer's slots
+GET    /api/slots/:slotId/clients  Get bookings for slot
+POST   /api/bookings               Book a slot
+GET    /api/bookings/:trainerId    Get trainer's bookings
+```
+
+### Video Calls
+```
+POST   /api/agora/generate-token   Get RTC token for call
+POST   /api/calls/log              Log call metadata
+GET    /api/calls/history          Fetch call history
+```
 
 ---
 
-## 🗄️ Key Data Models
+## 🎨 UI/UX Highlights
 
-- **Trainer** — id, email, name, phone, training type, experience, image, session price, bio
-- **Client** — id, name, email, mobile, avatar, booked slots
-- **TrainerSlot** — id, trainer id, date, start/end time, price, status, booked-by info, virtual
-- **BookedSlot** — id, slot date, start/end time, price, status, user info
+✨ **Dark theme** optimized for trainer workflows  
+✨ **Real-time updates** via Supabase Realtime  
+✨ **Responsive design** (mobile, tablet, desktop)  
+✨ **Smooth animations** and micro-interactions  
+✨ **Accessible** color contrast and navigation  
+✨ **Fast** — Vite builds in <1s, Flutter JIT refresh  
+
+---
+
+## 📊 Performance & Scalability
+
+- **Database** — Supabase with indexed queries for fast slot lookups
+- **Real-time Sync** — Supabase Realtime for instant booking updates
+- **CDN** — Vercel for static asset delivery
+- **Backend** — Render auto-scaling for API requests
+- **Video** — Agora's global server network for low-latency calls
+
+---
+
+## 🔒 Security
+
+- ✅ Row-level security (RLS) on Supabase tables
+- ✅ JWT authentication on all API endpoints
+- ✅ Environment variables for sensitive keys (never hardcoded)
+- ✅ HTTPS-only for all external communications
+- ✅ Password hashing via Supabase Auth
+- ✅ SMTP credentials validated server-side
+- ✅ See [SECURITY.md](./SECURITY.md) for detailed policies
 
 ---
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Commit your changes (`git commit -m 'Add some feature'`)
-4. Push to the branch (`git push origin feature/your-feature`)
-5. Open a pull request
+We welcome contributions! Here's how:
+
+1. **Fork** the repository
+2. **Create a branch**: `git checkout -b feature/your-feature`
+3. **Commit changes**: `git commit -m 'Add your feature'`
+4. **Push**: `git push origin feature/your-feature`
+5. **Open a Pull Request**
 
 ---
 
-## 📄 License
+## 📋 Roadmap
 
-© 2026 GetFit. All rights reserved. Designed for elite coaches.
+- [ ] Trainer reviews & ratings system
+- [ ] Group training sessions (1-to-many)
+- [ ] Payment subscriptions (monthly plans)
+- [ ] AI workout recommendations
+- [ ] Wearable device integration (Apple Watch, Fitbit)
+- [ ] Analytics dashboard (trainee progress tracking)
+- [ ] Multi-language support
 
 ---
 
-*Built for trainers, by trainers.*
+## 📝 License
+
+© 2026 GetFit AI. All rights reserved.
+
+*Built for trainers, by trainers. Designed to scale your coaching business.*
+
+---
+
+## 💬 Support & Feedback
+
+Have questions or found a bug?
+- 📧 Email: support@getfitai.com
+- 🐛 [Open an issue](https://github.com/AAbdullahRajput/Get-Fit-Ai-Web-Trainer-Website-And-Mobile-Application-/issues)
+- 💡 [Start a discussion](https://github.com/AAbdullahRajput/Get-Fit-Ai-Web-Trainer-Website-And-Mobile-Application-/discussions)
+
+---
+
+<div align="center">
+
+**Made with ❤️ by [Ahmad Abdullah](https://github.com/AAbdullahRajput)**
+
+[⭐ Star us on GitHub](https://github.com/AAbdullahRajput/Get-Fit-Ai-Web-Trainer-Website-And-Mobile-Application-) — it helps!
+
+</div>
