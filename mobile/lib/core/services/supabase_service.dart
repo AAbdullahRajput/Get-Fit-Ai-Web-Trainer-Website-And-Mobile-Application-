@@ -178,10 +178,11 @@ class SupabaseService {
     } catch (e) {
       debugPrint('\x1B[31m[DEBUG] Raw TCP to 1.1.1.1:443 FAILED: $e\x1B[0m');
     }
-    // One more test: resolve via Google's DNS-over-HTTPS API directly (bypasses device resolver entirely)
+// One more test: resolve via Google's DNS-over-HTTPS API directly (bypasses device resolver entirely)
     try {
+      final supabaseHost = Uri.parse(AppConstants.supabaseUrl).host;
       final dohResponse = await HttpClient().getUrl(Uri.parse(
-        'https://dns.google/resolve?name=rxtapixbzfurkhotot.supabase.co&type=A',
+        'https://dns.google/resolve?name=$supabaseHost&type=A',
       )).then((req) => req.close());
       final body = await dohResponse.transform(utf8.decoder).join();
       debugPrint('\x1B[32m[DEBUG] Google DoH result: $body\x1B[0m');
